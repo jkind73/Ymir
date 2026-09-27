@@ -17,6 +17,7 @@
 #include <ymir/gpu/d3d12/d3d12_pipeline_state.hpp>
 #include <ymir/gpu/d3d12/d3d12_resource.hpp>
 #include <ymir/gpu/d3d12/d3d12_root_signature.hpp>
+#include <ymir/gpu/d3d12/d3d12_utils.hpp>
 
 #include <ymir/gpu/shaders/gpu_shaders.hpp>
 
@@ -873,6 +874,75 @@ struct Direct3D12VDPRenderer::Impl {
         return {};
     }
 
+    /// @brief Creates a Buffer.
+    /// @param[out] buffer the resource object to create
+    /// @param[in] format format of each element
+    /// @param[in] numElements number of elements in the buffer
+    /// @param[in] spec buffer specifications
+    /// @return nothing, or an error message
+    [[nodiscard]] util::VoidResult<> CreatePrimitiveBuffer(D3D12Resource &buffer, DXGI_FORMAT format, UINT numElements,
+                                                           const BufferSpec &spec) {
+        const UINT elementSize = GetElementSize(format);
+        const UINT64 size = static_cast<UINT64>(elementSize) * numElements;
+        const UINT64 viewSize = size / sizeof(HLSLuint);
+        if (viewSize != static_cast<UINT>(viewSize)) {
+            return util::ErrorMessage{
+                fmt::format("Could not create primitive buffer \"{}\": buffer is too large", spec.name)};
+        }
+
+        D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE;
+        if (spec.uav != nullptr) {
+            flags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+        }
+
+        auto builder = buffer.BufferBuilder(size);
+        builder.Flags(flags);
+        if (HRESULT hr = builder.BuildCommitted(device); FAILED(hr)) {
+            return util::ErrorMessage{
+                fmt::format("Could not create primitive buffer \"{}\", error code {:X}", spec.name, (uint32)hr)};
+        }
+        buffer->SetName(util::StringToWString(spec.name).c_str());
+
+        if (spec.srv != nullptr) {
+            if (!offlineHeapAlloc.Allocate(*spec.srv)) {
+                return util::ErrorMessage{fmt::format("Could not allocate primitive buffer \"{}\" SRV", spec.name)};
+            }
+            const D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{
+                .Format = format,
+                .ViewDimension = D3D12_SRV_DIMENSION_BUFFER,
+                .Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
+                .Buffer =
+                    {
+                        .FirstElement = 0,
+                        .NumElements = static_cast<UINT>(viewSize),
+                        .StructureByteStride = 0,
+                        .Flags = D3D12_BUFFER_SRV_FLAG_NONE,
+                    },
+            };
+            device->CreateShaderResourceView(buffer.GetPointer(), &srvDesc, spec.srv->cpuHandle);
+        }
+        if (spec.uav != nullptr) {
+            if (!offlineHeapAlloc.Allocate(*spec.uav)) {
+                return util::ErrorMessage{fmt::format("Could not allocate primitive buffer \"{}\" UAV", spec.name)};
+            }
+            const D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc{
+                .Format = format,
+                .ViewDimension = D3D12_UAV_DIMENSION_BUFFER,
+                .Buffer =
+                    {
+                        .FirstElement = 0,
+                        .NumElements = static_cast<UINT>(viewSize),
+                        .StructureByteStride = 0,
+                        .CounterOffsetInBytes = 0,
+                        .Flags = D3D12_BUFFER_UAV_FLAG_NONE,
+                    },
+            };
+            device->CreateUnorderedAccessView(buffer.GetPointer(), nullptr, &uavDesc, spec.uav->cpuHandle);
+        }
+
+        return {};
+    }
+
     /// @brief Creates a StructuredBuffer.
     /// @param[out] buffer the resource object to create
     /// @param[in] elementSize element size in bytes, must be a multiple of 4
@@ -1601,37 +1671,18 @@ struct Direct3D12VDPRenderer::Impl {
             FrameContext &frameCtx = frames[i];
 
             // VDP2 CRAM color buffer
-            // TODO: PrimitiveBuffer
-            {
-                auto builder = frameCtx.cramColorBuffer.BufferBuilder(kVDP2CRAMColorBufferSize);
-                if (HRESULT hr = builder.BuildCommitted(device); FAILED(hr)) {
-                    return util::ErrorMessage{
-                        fmt::format("Could not create VDP2 CRAM color buffer #{}, error code {:X}", i, (uint32)hr)};
-                }
-                frameCtx.cramColorBuffer->SetName(fmt::format(L"[Ymir-VDP2] CRAM color buffer #{}", i).c_str());
-
-                barrierTracker.InitializeBuffer(
-                    frameCtx.cramColorBuffer.GetPointer(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,
-                    D3D12_BARRIER_SYNC_COMPUTE_SHADING, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
-
-                if (!offlineHeapAlloc.Allocate(frameCtx.cramColorSRV)) {
-                    return util::ErrorMessage{fmt::format("Could not allocate VDP2 CRAM color buffer SRV #{}", i)};
-                }
-                const D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{
-                    .Format = DXGI_FORMAT_R8G8B8A8_UINT,
-                    .ViewDimension = D3D12_SRV_DIMENSION_BUFFER,
-                    .Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
-                    .Buffer =
-                        {
-                            .FirstElement = 0,
-                            .NumElements = kVDP2CRAMColorBufferSize / sizeof(uint32),
-                            .StructureByteStride = 0,
-                            .Flags = D3D12_BUFFER_SRV_FLAG_NONE,
-                        },
-                };
-                device->CreateShaderResourceView(frameCtx.cramColorBuffer.GetPointer(), &srvDesc,
-                                                 frameCtx.cramColorSRV.cpuHandle);
+            if (auto result =
+                    CreatePrimitiveBuffer(frameCtx.cramColorBuffer, DXGI_FORMAT_R8G8B8A8_UINT, kVDP2CRAMColorBufferSize,
+                                          {
+                                              .srv = &frameCtx.cramColorSRV,
+                                              .name = fmt::format("[Ymir-VDP2] CRAM color buffer #{}", i),
+                                          });
+                !result) {
+                return result;
             }
+            barrierTracker.InitializeBuffer(frameCtx.cramColorBuffer.GetPointer(),
+                                            D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,
+                                            D3D12_BARRIER_SYNC_COMPUTE_SHADING, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
 
             // VDP2 CRAM rotation coefficients buffer
             if (auto result =

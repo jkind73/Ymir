@@ -370,6 +370,7 @@ if (WIN32)
             include/ymir/gpu/d3d12/d3d12_resource.hpp
             include/ymir/gpu/d3d12/d3d12_root_signature.hpp
             include/ymir/gpu/d3d12/d3d12_swap_chain.hpp
+            include/ymir/gpu/d3d12/d3d12_utils.hpp
 
             include/ymir/hw/vdp/renderer/vdp_renderer_hw_d3d12.hpp
 

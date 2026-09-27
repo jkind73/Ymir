@@ -17,8 +17,8 @@ Buffer<uint4> g_cramColor : register(t3);
 StructuredBuffer<RotParamBase> g_rotParamBases : register(t4);
 ByteAddressBuffer g_spriteFB : register(t5);
 
-RWTexture2DArray<uint4> g_layerOut : register(u0);
-RWTexture2DArray<uint> g_spriteAttrsOut : register(u1);
+RWTexture2DArray<uint4> g_layerOut : register(u1);
+RWTexture2DArray<uint> g_spriteAttrsOut : register(u2);
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Parameters

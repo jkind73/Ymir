@@ -258,14 +258,16 @@ public:
     DescTableBuilder &AddSRVs(UINT numDescs, UINT baseReg, UINT regSpace = 0,
                               D3D12_DESCRIPTOR_RANGE_FLAGS flags = D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
                               UINT offsetFromStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND) {
-        m_ranges.push_back(D3D12_DESCRIPTOR_RANGE1{
-            .RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
-            .NumDescriptors = numDescs,
-            .BaseShaderRegister = baseReg,
-            .RegisterSpace = regSpace,
-            .Flags = flags,
-            .OffsetInDescriptorsFromTableStart = offsetFromStart,
-        });
+        if (numDescs > 0) {
+            m_ranges.push_back(D3D12_DESCRIPTOR_RANGE1{
+                .RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
+                .NumDescriptors = numDescs,
+                .BaseShaderRegister = baseReg,
+                .RegisterSpace = regSpace,
+                .Flags = flags,
+                .OffsetInDescriptorsFromTableStart = offsetFromStart,
+            });
+        }
         return *this;
     }
 
@@ -279,14 +281,16 @@ public:
     DescTableBuilder &AddUAVs(UINT numDescs, UINT baseReg, UINT regSpace = 0,
                               D3D12_DESCRIPTOR_RANGE_FLAGS flags = D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
                               UINT offsetFromStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND) {
-        m_ranges.push_back(D3D12_DESCRIPTOR_RANGE1{
-            .RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV,
-            .NumDescriptors = numDescs,
-            .BaseShaderRegister = baseReg,
-            .RegisterSpace = regSpace,
-            .Flags = flags,
-            .OffsetInDescriptorsFromTableStart = offsetFromStart,
-        });
+        if (numDescs > 0) {
+            m_ranges.push_back(D3D12_DESCRIPTOR_RANGE1{
+                .RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV,
+                .NumDescriptors = numDescs,
+                .BaseShaderRegister = baseReg,
+                .RegisterSpace = regSpace,
+                .Flags = flags,
+                .OffsetInDescriptorsFromTableStart = offsetFromStart,
+            });
+        }
         return *this;
     }
 
@@ -300,14 +304,16 @@ public:
     DescTableBuilder &AddCBVs(UINT numDescs, UINT baseReg, UINT regSpace = 0,
                               D3D12_DESCRIPTOR_RANGE_FLAGS flags = D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
                               UINT offsetFromStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND) {
-        m_ranges.push_back(D3D12_DESCRIPTOR_RANGE1{
-            .RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_CBV,
-            .NumDescriptors = numDescs,
-            .BaseShaderRegister = baseReg,
-            .RegisterSpace = regSpace,
-            .Flags = flags,
-            .OffsetInDescriptorsFromTableStart = offsetFromStart,
-        });
+        if (numDescs > 0) {
+            m_ranges.push_back(D3D12_DESCRIPTOR_RANGE1{
+                .RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_CBV,
+                .NumDescriptors = numDescs,
+                .BaseShaderRegister = baseReg,
+                .RegisterSpace = regSpace,
+                .Flags = flags,
+                .OffsetInDescriptorsFromTableStart = offsetFromStart,
+            });
+        }
         return *this;
     }
 
@@ -321,14 +327,16 @@ public:
     DescTableBuilder &AddSamplers(UINT numDescs, UINT baseReg, UINT regSpace = 0,
                                   D3D12_DESCRIPTOR_RANGE_FLAGS flags = D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
                                   UINT offsetFromStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND) {
-        m_ranges.push_back(D3D12_DESCRIPTOR_RANGE1{
-            .RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER,
-            .NumDescriptors = numDescs,
-            .BaseShaderRegister = baseReg,
-            .RegisterSpace = regSpace,
-            .Flags = flags,
-            .OffsetInDescriptorsFromTableStart = offsetFromStart,
-        });
+        if (numDescs > 0) {
+            m_ranges.push_back(D3D12_DESCRIPTOR_RANGE1{
+                .RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER,
+                .NumDescriptors = numDescs,
+                .BaseShaderRegister = baseReg,
+                .RegisterSpace = regSpace,
+                .Flags = flags,
+                .OffsetInDescriptorsFromTableStart = offsetFromStart,
+            });
+        }
         return *this;
     }
 

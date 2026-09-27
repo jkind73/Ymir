@@ -749,6 +749,30 @@ struct Direct3D12VDPRenderer::Impl {
     UploadRingBuffer uploadBuffer;
 
     // =================================================================================================================
+    // Resource management
+
+    struct RootSignatureSpec {
+        UINT64 constantsSize = 0;
+        UINT numSRVs = 0;
+        UINT numUAVs = 0;
+        std::string name;
+    };
+
+    [[nodiscard]] util::VoidResult<> CreateRootSignature(D3D12RootSignature &rootSig, const RootSignatureSpec &spec) {
+        // NOTE: SRV/UAV descriptors start from 1 because SPIRV-Cross assumes buffers in t0/u0 are constant
+        auto builder = rootSig.Builder();
+        builder.Add32BitConstants(0, spec.constantsSize / sizeof(uint32));
+        builder.AddDescriptorTable().AddSRVs(spec.numSRVs, 1).AddUAVs(spec.numUAVs, 1);
+        if (HRESULT hr = builder.Build(device); FAILED(hr)) {
+            return util::ErrorMessage{
+                fmt::format("Could not build root signature \"{}\", error code {:X}", spec.name, (uint32)hr)};
+        }
+        vdp1.fbramWriteRootSig->SetName(util::StringToWString(spec.name).c_str());
+
+        return {};
+    }
+
+    // =================================================================================================================
     // Operations
 
     util::VoidResult<> Initialize(ID3D12Device *pDevice) {
@@ -926,7 +950,6 @@ struct Direct3D12VDPRenderer::Impl {
             static constexpr UINT64 kEntrySize = sizeof(VDP1FBRAMWrite);
 
             auto builder = vdp1.fbramWritesBuffer.BufferBuilder(kNumEntries * kEntrySize);
-            builder.Flags(D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
             if (HRESULT hr = builder.BuildCommitted(device); FAILED(hr)) {
                 return util::ErrorMessage{
                     fmt::format("Could not create VDP1 FBRAM writes buffer, error code {:X}", (uint32)hr)};
@@ -996,17 +1019,15 @@ struct Direct3D12VDPRenderer::Impl {
                     fmt::format("VDP1 framebuffer write compute shader validation failed: {}", result.Error().message)};
             }
 
-            auto rootSigBuilder = vdp1.fbramWriteRootSig.Builder();
-            rootSigBuilder.Add32BitConstants(0, sizeof(VDP1CommonRenderParams) / sizeof(uint32) + 1);
-
-            rootSigBuilder.AddDescriptorTable()
-                .AddSRVs(1, 1)  // NOTE: starting from 1 because SPIRV-Cross assumes buffers in t0 are constant
-                .AddUAVs(1, 1); // NOTE: starting from 1 because SPIRV-Cross assumes buffers in u0 are constant
-            if (HRESULT hr = rootSigBuilder.Build(device); FAILED(hr)) {
-                return util::ErrorMessage{
-                    fmt::format("Could not build VDP1 framebuffer write root signature, error code {:X}", (uint32)hr)};
+            const RootSignatureSpec rootSigSpec{
+                .constantsSize = sizeof(VDP1CommonRenderParams) + sizeof(HLSLuint),
+                .numSRVs = 1,
+                .numUAVs = 1,
+                .name = "[Ymir-VDP1] Framebuffer write root signature",
+            };
+            if (auto result = CreateRootSignature(vdp1.fbramWriteRootSig, rootSigSpec); !result) {
+                return result;
             }
-            vdp1.fbramWriteRootSig->SetName(L"[Ymir-VDP1] Framebuffer write root signature");
 
             const D3D12_COMPUTE_PIPELINE_STATE_DESC psoDesc{
                 .pRootSignature = vdp1.fbramWriteRootSig.GetPointer(),
@@ -1049,16 +1070,14 @@ struct Direct3D12VDPRenderer::Impl {
                     fmt::format("VDP1 framebuffer erase compute shader validation failed: {}", result.Error().message)};
             }
 
-            auto rootSigBuilder = vdp1.eraseRootSig.Builder();
-            rootSigBuilder.Add32BitConstants(0, (sizeof(VDP1CommonRenderParams) + sizeof(VDP1EraseParams)) /
-                                                    sizeof(uint32));
-            // NOTE: starting from 1 because SPIRV-Cross assumes buffers in u0 are constant
-            rootSigBuilder.AddDescriptorTable().AddUAVs(1, 1);
-            if (HRESULT hr = rootSigBuilder.Build(device); FAILED(hr)) {
-                return util::ErrorMessage{
-                    fmt::format("Could not build VDP1 framebuffer erase root signature, error code {:X}", (uint32)hr)};
+            const RootSignatureSpec rootSigSpec{
+                .constantsSize = sizeof(VDP1CommonRenderParams) + sizeof(VDP1EraseParams),
+                .numUAVs = 1,
+                .name = "[Ymir-VDP1] Framebuffer erase root signature",
+            };
+            if (auto result = CreateRootSignature(vdp1.eraseRootSig, rootSigSpec); !result) {
+                return result;
             }
-            vdp1.eraseRootSig->SetName(L"[Ymir-VDP1] Framebuffer erase root signature");
         }
 
         // Polygon drawing
@@ -1084,33 +1103,27 @@ struct Direct3D12VDPRenderer::Impl {
             }
         }
 
-        // Polygon drawing root signature.
-        // All variants except OIT share the same inputs/outputs shape.
+        // Polygon drawing root signatures
         {
-            auto rootSigBuilder = vdp1.polyDrawRootSig.Builder();
-            rootSigBuilder.Add32BitConstants(0, (sizeof(VDP1CommonRenderParams) + sizeof(VDP1PolyDrawParams)) /
-                                                    sizeof(uint32));
-            rootSigBuilder.AddDescriptorTable()
-                .AddSRVs(4, 1)  // NOTE: starting from 1 because SPIRV-Cross assumes buffers in t0 are constant
-                .AddUAVs(1, 1); // NOTE: starting from 1 because SPIRV-Cross assumes buffers in u0 are constant
-            if (HRESULT hr = rootSigBuilder.Build(device); FAILED(hr)) {
-                return util::ErrorMessage{
-                    fmt::format("Could not build VDP1 polygon drawing root signature, error code {:X}", (uint32)hr)};
+            const RootSignatureSpec rootSigSpec{
+                .constantsSize = sizeof(VDP1CommonRenderParams) + sizeof(VDP1PolyDrawParams),
+                .numSRVs = 4,
+                .numUAVs = 1,
+                .name = "[Ymir-VDP1] Polygon drawing root signature",
+            };
+            if (auto result = CreateRootSignature(vdp1.polyDrawRootSig, rootSigSpec); !result) {
+                return result;
             }
-            vdp1.polyDrawRootSig->SetName(L"[Ymir-VDP1] Polygon drawing root signature");
-        }
-        {
-            auto rootSigBuilder = vdp1.polyDrawOITRootSig.Builder();
-            rootSigBuilder.Add32BitConstants(0, (sizeof(VDP1CommonRenderParams) + sizeof(VDP1PolyDrawParams)) /
-                                                    sizeof(uint32));
-            rootSigBuilder.AddDescriptorTable()
-                .AddSRVs(4, 1)  // NOTE: starting from 1 because SPIRV-Cross assumes buffers in t0 are constant
-                .AddUAVs(3, 1); // NOTE: starting from 1 because SPIRV-Cross assumes buffers in u0 are constant
-            if (HRESULT hr = rootSigBuilder.Build(device); FAILED(hr)) {
-                return util::ErrorMessage{fmt::format(
-                    "Could not build VDP1 polygon drawing OIT root signature, error code {:X}", (uint32)hr)};
+
+            const RootSignatureSpec rootSigOITSpec{
+                .constantsSize = sizeof(VDP1CommonRenderParams) + sizeof(VDP1PolyDrawParams),
+                .numSRVs = 4,
+                .numUAVs = 3,
+                .name = "[Ymir-VDP1] Polygon drawing root OITsignature",
+            };
+            if (auto result = CreateRootSignature(vdp1.polyDrawOITRootSig, rootSigOITSpec); !result) {
+                return result;
             }
-            vdp1.polyDrawOITRootSig->SetName(L"[Ymir-VDP1] Polygon drawing OIT root signature");
         }
 
         // Polygon output merger shaders
@@ -1135,32 +1148,26 @@ struct Direct3D12VDPRenderer::Impl {
             }
         }
 
-        // Polygon output merger root signature (non-OIT variants)
+        // Polygon output merger root signatures
         {
-            auto rootSigBuilder = vdp1.outputMergerRootSig.Builder();
-            rootSigBuilder.Add32BitConstants(0, sizeof(VDP1CommonRenderParams) / sizeof(uint32));
-            // NOTE: starting from 1 because SPIRV-Cross assumes buffers in u0 are constant
-            rootSigBuilder.AddDescriptorTable().AddUAVs(2, 1);
-            if (HRESULT hr = rootSigBuilder.Build(device); FAILED(hr)) {
-                return util::ErrorMessage{
-                    fmt::format("Could not build VDP1 output merger root signature, error code {:X}", (uint32)hr)};
+            const RootSignatureSpec rootSigSpec{
+                .constantsSize = sizeof(VDP1CommonRenderParams),
+                .numUAVs = 2,
+                .name = "[Ymir-VDP1] Output merger root signature",
+            };
+            if (auto result = CreateRootSignature(vdp1.outputMergerRootSig, rootSigSpec); !result) {
+                return result;
             }
-            vdp1.outputMergerRootSig->SetName(L"[Ymir-VDP1] Output merger root signature");
-        }
 
-        // Polygon output merger root signature (OIT variant)
-        {
-            auto rootSigBuilder = vdp1.outputMergerOITRootSig.Builder();
-            rootSigBuilder.Add32BitConstants(0, sizeof(VDP1CommonRenderParams) / sizeof(uint32));
-
-            rootSigBuilder.AddDescriptorTable()
-                .AddSRVs(1, 1)  // NOTE: starting from 1 because SPIRV-Cross assumes buffers in t0 are constant
-                .AddUAVs(2, 1); // NOTE: starting from 1 because SPIRV-Cross assumes buffers in u0 are constant
-            if (HRESULT hr = rootSigBuilder.Build(device); FAILED(hr)) {
-                return util::ErrorMessage{
-                    fmt::format("Could not build VDP1 output merger OIT root signature, error code {:X}", (uint32)hr)};
+            const RootSignatureSpec rootSigOITSpec{
+                .constantsSize = sizeof(VDP1CommonRenderParams),
+                .numSRVs = 1,
+                .numUAVs = 2,
+                .name = "[Ymir-VDP1] Output merger OIT root signature",
+            };
+            if (auto result = CreateRootSignature(vdp1.outputMergerOITRootSig, rootSigOITSpec); !result) {
+                return result;
             }
-            vdp1.outputMergerOITRootSig->SetName(L"[Ymir-VDP1] Output merger OIT root signature");
         }
 
         // -------------------------------------------------------------------------------------------------------------
@@ -1692,16 +1699,15 @@ struct Direct3D12VDPRenderer::Impl {
                     "VDP2 sprite layer rendering compute shader validation failed: {}", result.Error().message)};
             }
 
-            auto rootSigBuilder = vdp2.drawSpriteRootSig.Builder();
-            rootSigBuilder.Add32BitConstants(0, sizeof(VDP2CommonRenderParams) / sizeof(uint32));
-            rootSigBuilder.AddDescriptorTable()
-                .AddSRVs(5, 1) // NOTE: starting from 1 because SPIRV-Cross assumes buffers in t0 are constant
-                .AddUAVs(2, 0);
-            if (HRESULT hr = rootSigBuilder.Build(device); FAILED(hr)) {
-                return util::ErrorMessage{fmt::format(
-                    "Could not build VDP2 sprite layer rendering root signature, error code {:X}", (uint32)hr)};
+            const RootSignatureSpec rootSigSpec{
+                .constantsSize = sizeof(VDP2CommonRenderParams),
+                .numSRVs = 5,
+                .numUAVs = 2,
+                .name = "[Ymir-VDP2] Sprite layer rendering root signature",
+            };
+            if (auto result = CreateRootSignature(vdp2.drawSpriteRootSig, rootSigSpec); !result) {
+                return result;
             }
-            vdp2.drawSpriteRootSig->SetName(L"[Ymir-VDP2] Sprite layer rendering root signature");
         }
 
         // Layer rendering
@@ -1720,16 +1726,15 @@ struct Direct3D12VDPRenderer::Impl {
                     fmt::format("VDP2 layer rendering compute shader validation failed: {}", result.Error().message)};
             }
 
-            auto rootSigBuilder = vdp2.drawBGsRootSig.Builder();
-            rootSigBuilder.Add32BitConstants(0, sizeof(VDP2CommonRenderParams) / sizeof(uint32));
-            rootSigBuilder.AddDescriptorTable()
-                .AddSRVs(6, 1) // NOTE: starting from 1 because SPIRV-Cross assumes buffers in t0 are constant
-                .AddUAVs(3, 0);
-            if (HRESULT hr = rootSigBuilder.Build(device); FAILED(hr)) {
-                return util::ErrorMessage{
-                    fmt::format("Could not build VDP2 layer rendering root signature, error code {:X}", (uint32)hr)};
+            const RootSignatureSpec rootSigSpec{
+                .constantsSize = sizeof(VDP2CommonRenderParams),
+                .numSRVs = 6,
+                .numUAVs = 3,
+                .name = "[Ymir-VDP2] Background layer rendering root signature",
+            };
+            if (auto result = CreateRootSignature(vdp2.drawBGsRootSig, rootSigSpec); !result) {
+                return result;
             }
-            vdp2.drawBGsRootSig->SetName(L"[Ymir-VDP2] Layer rendering root signature");
         }
 
         // Layer compositing
@@ -1748,16 +1753,15 @@ struct Direct3D12VDPRenderer::Impl {
                     fmt::format("VDP2 layer compositing compute shader validation failed: {}", result.Error().message)};
             }
 
-            auto rootSigBuilder = vdp2.composeRootSig.Builder();
-            rootSigBuilder.Add32BitConstants(0, sizeof(VDP2CommonRenderParams) / sizeof(uint32));
-            rootSigBuilder.AddDescriptorTable()
-                .AddSRVs(6, 1) // NOTE: starting from 1 because SPIRV-Cross assumes buffers in t0 are constant
-                .AddUAVs(1, 0);
-            if (HRESULT hr = rootSigBuilder.Build(device); FAILED(hr)) {
-                return util::ErrorMessage{
-                    fmt::format("Could not build VDP2 layer compositing root signature, error code {:X}", (uint32)hr)};
+            const RootSignatureSpec rootSigSpec{
+                .constantsSize = sizeof(VDP2CommonRenderParams),
+                .numSRVs = 6,
+                .numUAVs = 1,
+                .name = "[Ymir-VDP2] Layer compositing root signature",
+            };
+            if (auto result = CreateRootSignature(vdp2.composeRootSig, rootSigSpec); !result) {
+                return result;
             }
-            vdp2.composeRootSig->SetName(L"[Ymir-VDP2] Layer compositing root signature");
         }
 
         // -------------------------------------------------------------------------------------------------------------

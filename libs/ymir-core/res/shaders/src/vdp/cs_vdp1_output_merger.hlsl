@@ -36,6 +36,7 @@ cbuffer RenderParamsBuffer : register(b0) {
 
 #if POLYSPEC_MERGE_MODE == POLYSPEC_SHADING_MODE_OIT
 StructuredBuffer<OITFragment> g_fragments : register(t1);
+
 RWByteAddressBuffer g_fbramOut : register(u1);
 RWBuffer<uint> g_listHeads : register(u2);
 #else

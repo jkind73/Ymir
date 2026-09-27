@@ -17,7 +17,7 @@ Texture2DArray<uint4> g_rbgLineColorIn : register(t4);
 Texture2DArray<uint> g_spriteAttrsIn : register(t5);
 Texture2D<uint> g_colorCalcWindowIn : register(t6);
 
-RWTexture2D<float4> g_compositeOut : register(u0);
+RWTexture2D<float4> g_compositeOut : register(u1);
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Definitions

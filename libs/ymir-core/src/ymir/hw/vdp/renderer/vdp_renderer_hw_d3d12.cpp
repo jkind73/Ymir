@@ -771,6 +771,23 @@ struct Direct3D12VDPRenderer::Impl {
         return {};
     }
 
+    [[nodiscard]] util::VoidResult<> CreateShader(gpu::ComputeShader &shader, std::string_view path) {
+        auto shaderBlobResult = LoadShader(path.data());
+        if (!shaderBlobResult) {
+            return util::ErrorMessage{
+                fmt::format("Could not load compute shader from \"{}\": {}", path, shaderBlobResult.Error().message)};
+        }
+        shader.format = gpu::ShaderBytecodeFormat::DXIL;
+        shader.bytecode = shaderBlobResult.Value();
+        shader.entrypoint = kCSEntrypoint;
+        auto result = gpu::ValidateShader(shader);
+        if (!result) {
+            return util::ErrorMessage{
+                fmt::format("Compute shader \"{}\" validation failed: {}", path, result.Error().message)};
+        }
+        return {};
+    }
+
     [[nodiscard]] util::VoidResult<> CreatePSO(D3D12PipelineState &pso, D3D12RootSignature &rootSig,
                                                gpu::ComputeShader &shader, std::string_view name) {
         const D3D12_COMPUTE_PIPELINE_STATE_DESC psoDesc{
@@ -1018,18 +1035,9 @@ struct Direct3D12VDPRenderer::Impl {
 
         // Framebuffer write
         {
-            auto shaderBlobResult = LoadShader("src/vdp/cs_vdp1_fbram_write.cso");
-            if (!shaderBlobResult) {
-                return util::ErrorMessage{fmt::format("Could not load VDP1 framebuffer write compute shader: {}",
-                                                      shaderBlobResult.Error().message)};
-            }
-            vdp1.fbramWriteShader.format = gpu::ShaderBytecodeFormat::DXIL;
-            vdp1.fbramWriteShader.bytecode = shaderBlobResult.Value();
-            vdp1.fbramWriteShader.entrypoint = kCSEntrypoint;
-            auto result = gpu::ValidateShader(vdp1.fbramWriteShader);
-            if (!result) {
+            if (auto result = CreateShader(vdp1.fbramWriteShader, "src/vdp/cs_vdp1_fbram_write.cso"); !result) {
                 return util::ErrorMessage{
-                    fmt::format("VDP1 framebuffer write compute shader validation failed: {}", result.Error().message)};
+                    fmt::format("Could not create VDP1 framebuffer write compute shader: {}", result.Error().message)};
             }
 
             const RootSignatureSpec rootSigSpec{
@@ -1064,18 +1072,9 @@ struct Direct3D12VDPRenderer::Impl {
 
         // Framebuffer erase
         {
-            auto shaderBlobResult = LoadShader("src/vdp/cs_vdp1_erase.cso");
-            if (!shaderBlobResult) {
-                return util::ErrorMessage{fmt::format("Could not load VDP1 framebuffer erase compute shader: {}",
-                                                      shaderBlobResult.Error().message)};
-            }
-            vdp1.eraseShader.format = gpu::ShaderBytecodeFormat::DXIL;
-            vdp1.eraseShader.bytecode = shaderBlobResult.Value();
-            vdp1.eraseShader.entrypoint = kCSEntrypoint;
-            auto result = gpu::ValidateShader(vdp1.eraseShader);
-            if (!result) {
+            if (auto result = CreateShader(vdp1.eraseShader, "src/vdp/cs_vdp1_erase.cso"); !result) {
                 return util::ErrorMessage{
-                    fmt::format("VDP1 framebuffer erase compute shader validation failed: {}", result.Error().message)};
+                    fmt::format("Could not create VDP1 framebuffer erase compute shader: {}", result.Error().message)};
             }
 
             const RootSignatureSpec rootSigSpec{
@@ -1093,20 +1092,9 @@ struct Direct3D12VDPRenderer::Impl {
             const auto [meshMode, shadingMode] = ExpandVDP1PolyDrawShaderIndex(shaderIndex);
             const std::string variantName = GetVDP1PolyDrawShaderVariantName(shaderIndex);
             const std::string filename = fmt::format("src/vdp/cs_vdp1_polydraw_{}_{}.cso", meshMode, shadingMode);
-            auto shaderBlobResult = LoadShader(filename.c_str());
-            if (!shaderBlobResult) {
+            if (auto result = CreateShader(vdp1.polyDrawShaders[shaderIndex], filename); !result) {
                 return util::ErrorMessage{
-                    fmt::format("Could not load VDP1 polygon drawing compute shader variant {}: {}", variantName,
-                                shaderBlobResult.Error().message)};
-            }
-            gpu::ComputeShader &polyDrawShader = vdp1.polyDrawShaders[shaderIndex];
-            polyDrawShader.format = gpu::ShaderBytecodeFormat::DXIL;
-            polyDrawShader.bytecode = shaderBlobResult.Value();
-            polyDrawShader.entrypoint = kCSEntrypoint;
-            auto result = gpu::ValidateShader(polyDrawShader);
-            if (!result) {
-                return util::ErrorMessage{
-                    fmt::format("VDP1 polygon drawing compute shader variant {} validation failed: {}", variantName,
+                    fmt::format("Could not create VDP1 polygon drawing compute shader variant {}: {}", variantName,
                                 result.Error().message)};
             }
         }
@@ -1139,19 +1127,9 @@ struct Direct3D12VDPRenderer::Impl {
             const auto [meshMode, mergeMode] = ExpandVDP1OutputMergerShaderIndex(shaderIndex);
             const std::string variantName = GetVDP1OutputMergerShaderVariantName(shaderIndex);
             const std::string filename = fmt::format("src/vdp/cs_vdp1_output_merger_{}_{}.cso", meshMode, mergeMode);
-            auto shaderBlobResult = LoadShader(filename.c_str());
-            if (!shaderBlobResult) {
-                return util::ErrorMessage{fmt::format("Could not load VDP1 output merger compute shader variant {}: {}",
-                                                      variantName, shaderBlobResult.Error().message)};
-            }
-            gpu::ComputeShader &outputMergerShader = vdp1.outputMergerShaders[shaderIndex];
-            outputMergerShader.format = gpu::ShaderBytecodeFormat::DXIL;
-            outputMergerShader.bytecode = shaderBlobResult.Value();
-            outputMergerShader.entrypoint = kCSEntrypoint;
-            auto result = gpu::ValidateShader(outputMergerShader);
-            if (!result) {
+            if (auto result = CreateShader(vdp1.outputMergerShaders[shaderIndex], filename); !result) {
                 return util::ErrorMessage{
-                    fmt::format("VDP1 output merger compute shader variant {} validation failed: {}", variantName,
+                    fmt::format("Could not create VDP1 output merger compute shader variant {}: {}", variantName,
                                 result.Error().message)};
             }
         }
@@ -1673,18 +1651,9 @@ struct Direct3D12VDPRenderer::Impl {
 
         // Sprite layer rendering
         {
-            auto shaderBlobResult = LoadShader("src/vdp/cs_vdp2_render_sprite.cso");
-            if (!shaderBlobResult) {
-                return util::ErrorMessage{fmt::format("Could not load VDP2 sprite layer rendering compute shader: {}",
-                                                      shaderBlobResult.Error().message)};
-            }
-            vdp2.drawSpriteShader.format = gpu::ShaderBytecodeFormat::DXIL;
-            vdp2.drawSpriteShader.bytecode = shaderBlobResult.Value();
-            vdp2.drawSpriteShader.entrypoint = kCSEntrypoint;
-            auto result = gpu::ValidateShader(vdp2.drawSpriteShader);
-            if (!result) {
-                return util::ErrorMessage{fmt::format(
-                    "VDP2 sprite layer rendering compute shader validation failed: {}", result.Error().message)};
+            if (auto result = CreateShader(vdp2.drawSpriteShader, "src/vdp/cs_vdp2_render_sprite.cso"); !result) {
+                return util::ErrorMessage{fmt::format("Could not create VDP2 sprite layer rendering compute shader: {}",
+                                                      result.Error().message)};
             }
 
             const RootSignatureSpec rootSigSpec{
@@ -1700,18 +1669,9 @@ struct Direct3D12VDPRenderer::Impl {
 
         // Layer rendering
         {
-            auto shaderBlobResult = LoadShader("src/vdp/cs_vdp2_render_bgs.cso");
-            if (!shaderBlobResult) {
-                return util::ErrorMessage{fmt::format("Could not load VDP2 layer rendering compute shader: {}",
-                                                      shaderBlobResult.Error().message)};
-            }
-            vdp2.drawBGsShader.format = gpu::ShaderBytecodeFormat::DXIL;
-            vdp2.drawBGsShader.bytecode = shaderBlobResult.Value();
-            vdp2.drawBGsShader.entrypoint = kCSEntrypoint;
-            auto result = gpu::ValidateShader(vdp2.drawBGsShader);
-            if (!result) {
-                return util::ErrorMessage{
-                    fmt::format("VDP2 layer rendering compute shader validation failed: {}", result.Error().message)};
+            if (auto result = CreateShader(vdp2.drawBGsShader, "src/vdp/cs_vdp2_render_bgs.cso"); !result) {
+                return util::ErrorMessage{fmt::format(
+                    "Could not create VDP2 background layer rendering compute shader: {}", result.Error().message)};
             }
 
             const RootSignatureSpec rootSigSpec{
@@ -1727,18 +1687,9 @@ struct Direct3D12VDPRenderer::Impl {
 
         // Layer compositing
         {
-            auto shaderBlobResult = LoadShader("src/vdp/cs_vdp2_compose.cso");
-            if (!shaderBlobResult) {
-                return util::ErrorMessage{fmt::format("Could not load VDP2 layer compositing compute shader: {}",
-                                                      shaderBlobResult.Error().message)};
-            }
-            vdp2.composeShader.format = gpu::ShaderBytecodeFormat::DXIL;
-            vdp2.composeShader.bytecode = shaderBlobResult.Value();
-            vdp2.composeShader.entrypoint = kCSEntrypoint;
-            auto result = gpu::ValidateShader(vdp2.composeShader);
-            if (!result) {
-                return util::ErrorMessage{
-                    fmt::format("VDP2 layer compositing compute shader validation failed: {}", result.Error().message)};
+            if (auto result = CreateShader(vdp2.composeShader, "src/vdp/cs_vdp2_compose.cso"); !result) {
+                return util::ErrorMessage{fmt::format(
+                    "Could not create VDP2 layer compositing rendering compute shader: {}", result.Error().message)};
             }
 
             const RootSignatureSpec rootSigSpec{
@@ -2235,8 +2186,9 @@ struct Direct3D12VDPRenderer::Impl {
 
             // Layer rendering
             {
-                if (auto result = CreatePSO(frameCtx.drawBGsPSO, vdp2.drawBGsRootSig, vdp2.drawBGsShader,
-                                            fmt::format("[Ymir-VDP2] Layer rendering pipeline state object #{}", i));
+                if (auto result =
+                        CreatePSO(frameCtx.drawBGsPSO, vdp2.drawBGsRootSig, vdp2.drawBGsShader,
+                                  fmt::format("[Ymir-VDP2] Background layer rendering pipeline state object #{}", i));
                     !result) {
                     return result;
                 }

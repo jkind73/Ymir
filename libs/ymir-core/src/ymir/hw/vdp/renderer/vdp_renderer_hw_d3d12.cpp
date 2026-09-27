@@ -155,7 +155,7 @@ union HLSLint3 {
 };
 static_assert(sizeof(HLSLint3) == sizeof(HLSLint) * 3);
 
-/// @brief Packs up bool into the least significant bits of an unsigned integer.
+/// @brief Packs up boolean values into the least significant bits of an unsigned integer.
 /// @tparam T the unsigned integral type
 /// @param[in] bools the bools to pack
 /// @return the packed value
@@ -171,7 +171,7 @@ static uint32 PackBools(std::span<const bool> bools) {
     return value;
 }
 
-// Base Xst, Yst, KA for params A and B relative to startY
+/// @brief Base Xst, Yst, KA for params A and B for a given line.
 struct alignas(16) VDP2RotParamBase {
     uint32 tableAddress;
     sint32 Xst, Yst;

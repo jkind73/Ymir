@@ -295,6 +295,9 @@ add_library(ymir-core
 
     src/ymir/hw/vdp/renderer/vdp_renderer_sw.cpp
 
+    src/ymir/hw/vdp/renderer/common_hw/common_hw_defs.hpp
+    src/ymir/hw/vdp/renderer/common_hw/memory_usage_tracker.hpp
+
     src/ymir/media/cd_defs.cpp
     src/ymir/media/cd_interface.cpp
     src/ymir/media/cd_utils.cpp
@@ -376,6 +379,10 @@ if (WIN32)
             src/ymir/gpu/shaders/gpu_shaders_windows.cpp
 
             src/ymir/hw/vdp/renderer/vdp_renderer_hw_d3d12.cpp
+
+            src/ymir/hw/vdp/renderer/d3d12/d3d12_barrier_tracker.hpp
+            src/ymir/hw/vdp/renderer/d3d12/d3d12_dev_log.hpp
+            src/ymir/hw/vdp/renderer/d3d12/d3d12_upload_buffer.hpp
     )
 elseif (APPLE)
     target_sources(ymir-core PRIVATE

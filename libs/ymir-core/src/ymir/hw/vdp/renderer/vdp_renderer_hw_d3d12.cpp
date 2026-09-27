@@ -913,7 +913,7 @@ struct Direct3D12VDPRenderer::Impl {
         return {};
     }
 
-    /// @brief Creates a ByteAddressBuffer.
+    /// @brief Creates a `ByteAddressBuffer`.
     /// @param[out] buffer the resource object to create
     /// @param[in] size buffer size in bytes
     /// @param[in] spec buffer specifications
@@ -927,7 +927,7 @@ struct Direct3D12VDPRenderer::Impl {
         return CreateBuffer(buffer, fullSpec);
     }
 
-    /// @brief Creates a Buffer.
+    /// @brief Creates a `Buffer`.
     /// @param[out] buffer the resource object to create
     /// @param[in] format format of each element
     /// @param[in] numElements number of elements in the buffer
@@ -947,7 +947,7 @@ struct Direct3D12VDPRenderer::Impl {
         return CreateBuffer(buffer, fullSpec);
     }
 
-    /// @brief Creates a StructuredBuffer.
+    /// @brief Creates a `StructuredBuffer`.
     /// @param[out] buffer the resource object to create
     /// @param[in] elementSize element size in bytes, must be a multiple of 4
     /// @param[in] numElements number of elements in the buffer
@@ -968,7 +968,7 @@ struct Direct3D12VDPRenderer::Impl {
         return CreateBuffer(buffer, fullSpec);
     }
 
-    /// @brief Creates a StructuredBuffer.
+    /// @brief Creates a `StructuredBuffer<T>`.
     /// @tparam T structured buffer element type from which to derive the element size
     /// @param[out] buffer the resource object to create
     /// @param[in] numElements number of elements in the buffer
@@ -977,6 +977,141 @@ struct Direct3D12VDPRenderer::Impl {
     [[nodiscard]] util::VoidResult<> CreateStructuredBuffer(D3D12Resource &buffer, UINT64 numElements,
                                                             const BufferSpec &spec) {
         return CreateStructuredBuffer(buffer, sizeof(T), numElements, spec);
+    }
+
+    struct TextureSpec {
+        DescriptorRange *srv = nullptr;
+        DescriptorRange *uav = nullptr;
+        std::string name;
+    };
+
+    /// @brief Creates a `Texture2D`.
+    /// @param[out] texture the resource object to create
+    /// @param[in] format the texture format
+    /// @param[in] width the texture width
+    /// @param[in] height the texture height
+    /// @param[in] spec texture specifications
+    /// @return nothing, or an error message
+    [[nodiscard]] util::VoidResult<> Create2DTexture(D3D12Resource &texture, DXGI_FORMAT format, UINT width,
+                                                     UINT height, const TextureSpec &spec) {
+
+        D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE;
+        if (spec.uav != nullptr) {
+            flags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+        }
+
+        auto builder = texture.Texture2DBuilder(width, height);
+        builder.Format(format);
+        builder.Flags(flags);
+        if (HRESULT hr = builder.BuildCommitted(device); FAILED(hr)) {
+            return util::ErrorMessage{
+                fmt::format("Could not create 2D texture \"{}\", error code {:X}", spec.name, (uint32)hr)};
+        }
+        texture->SetName(util::StringToWString(spec.name).c_str());
+
+        if (spec.srv != nullptr) {
+            if (!offlineHeapAlloc.Allocate(*spec.srv)) {
+                return util::ErrorMessage{fmt::format("Could not allocate 2D texture \"{}\" SRV", spec.name)};
+            }
+            const D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{
+                .Format = format,
+                .ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D,
+                .Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
+                .Texture2D =
+                    {
+                        .MostDetailedMip = 0,
+                        .MipLevels = 1,
+                        .PlaneSlice = 0,
+                        .ResourceMinLODClamp = 0.0f,
+                    },
+            };
+            device->CreateShaderResourceView(texture.GetPointer(), &srvDesc, spec.srv->cpuHandle);
+        }
+
+        if (spec.uav != nullptr) {
+            if (!offlineHeapAlloc.Allocate(*spec.uav)) {
+                return util::ErrorMessage{fmt::format("Could not allocate 2D texture \"{}\" UAV", spec.name)};
+            }
+            const D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc{
+                .Format = format,
+                .ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D,
+                .Texture2D =
+                    {
+                        .MipSlice = 0,
+                        .PlaneSlice = 0,
+                    },
+            };
+            device->CreateUnorderedAccessView(texture.GetPointer(), nullptr, &uavDesc, spec.uav->cpuHandle);
+        }
+
+        return {};
+    }
+
+    /// @brief Creates a `Texture2DArray`.
+    /// @param[out] texture the resource object to create
+    /// @param[in] format the texture format
+    /// @param[in] width the texture width
+    /// @param[in] height the texture height
+    /// @param[in] arraySize the number of elements in the texture array
+    /// @param[in] spec texture specifications
+    /// @return nothing, or an error message
+    [[nodiscard]] util::VoidResult<> Create2DTextureArray(D3D12Resource &texture, DXGI_FORMAT format, UINT width,
+                                                          UINT height, UINT arraySize, const TextureSpec &spec) {
+
+        D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE;
+        if (spec.uav != nullptr) {
+            flags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+        }
+
+        auto builder = texture.Texture2DBuilder(width, height, arraySize);
+        builder.Format(format);
+        builder.Flags(flags);
+        if (HRESULT hr = builder.BuildCommitted(device); FAILED(hr)) {
+            return util::ErrorMessage{
+                fmt::format("Could not create 2D texture array \"{}\", error code {:X}", spec.name, (uint32)hr)};
+        }
+        texture->SetName(util::StringToWString(spec.name).c_str());
+
+        if (spec.srv != nullptr) {
+            if (!offlineHeapAlloc.Allocate(*spec.srv)) {
+                return util::ErrorMessage{fmt::format("Could not allocate 2D texture array \"{}\" SRV", spec.name)};
+            }
+            const D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{
+                .Format = format,
+                .ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2DARRAY,
+                .Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
+                .Texture2DArray =
+                    {
+                        .MostDetailedMip = 0,
+                        .MipLevels = 1,
+                        .FirstArraySlice = 0,
+                        .ArraySize = arraySize,
+                        .PlaneSlice = 0,
+                        .ResourceMinLODClamp = 0.0f,
+                    },
+            };
+            device->CreateShaderResourceView(texture.GetPointer(), &srvDesc, spec.srv->cpuHandle);
+        }
+
+        if (spec.uav != nullptr) {
+            if (!offlineHeapAlloc.Allocate(*spec.uav)) {
+                return util::ErrorMessage{fmt::format("Could not allocate 2D texture array \"{}\" UAV", spec.name)};
+            }
+            const D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc{
+                .Format = format,
+                .ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2DARRAY,
+                .Texture2DArray =
+                    {
+                        .MipSlice = 0,
+                        .FirstArraySlice = 0,
+                        .ArraySize = arraySize,
+                        .PlaneSlice = 0,
+                    },
+            };
+            device->CreateUnorderedAccessView(texture.GetPointer(), nullptr, &uavDesc, spec.uav->cpuHandle);
+        }
+
+        return {};
     }
 
     // =================================================================================================================
@@ -1531,37 +1666,17 @@ struct Direct3D12VDPRenderer::Impl {
                                         D3D12_BARRIER_SYNC_COMPUTE_SHADING, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
 
         // Composited VDP2 output texture
-        {
-            static constexpr DXGI_FORMAT kFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
-
-            auto builder = vdp2.compositeOutTexture.Texture2DBuilder(kMaxResH, kMaxResV);
-            builder.Format(kFormat);
-            builder.Flags(D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
-            if (HRESULT hr = builder.BuildCommitted(device); FAILED(hr)) {
-                return util::ErrorMessage{
-                    fmt::format("Could not create composited output texture, error code {:X}", (uint32)hr)};
-            }
-            vdp2.compositeOutTexture->SetName(L"[Ymir-VDP2] Composited output texture");
-
-            barrierTracker.InitializeTexture(vdp2.compositeOutTexture.GetPointer(), D3D12_RESOURCE_STATE_COMMON,
-                                             D3D12_BARRIER_SYNC_COMPUTE_SHADING, D3D12_BARRIER_ACCESS_SHADER_RESOURCE,
-                                             D3D12_BARRIER_LAYOUT_COMMON);
-
-            if (!offlineHeapAlloc.Allocate(vdp2.compositeOutUAV)) {
-                return util::ErrorMessage{"Could not create composited output texture UAV"};
-            }
-            const D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc{
-                .Format = kFormat,
-                .ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D,
-                .Texture2D =
-                    {
-                        .MipSlice = 0,
-                        .PlaneSlice = 0,
-                    },
-            };
-            device->CreateUnorderedAccessView(vdp2.compositeOutTexture.GetPointer(), nullptr, &uavDesc,
-                                              vdp2.compositeOutUAV.cpuHandle);
+        if (auto result = Create2DTexture(vdp2.compositeOutTexture, DXGI_FORMAT_R8G8B8A8_UNORM, kMaxResH, kMaxResV,
+                                          {
+                                              .uav = &vdp2.compositeOutUAV,
+                                              .name = "[Ymir-VDP2] Composited output texture",
+                                          });
+            !result) {
+            return result;
         }
+        barrierTracker.InitializeTexture(vdp2.compositeOutTexture.GetPointer(), D3D12_RESOURCE_STATE_COMMON,
+                                         D3D12_BARRIER_SYNC_COMPUTE_SHADING, D3D12_BARRIER_ACCESS_SHADER_RESOURCE,
+                                         D3D12_BARRIER_LAYOUT_COMMON);
 
         // -------------------------------------------------------------------------------------------------------------
         // Shaders and root signatures
@@ -1655,187 +1770,59 @@ struct Direct3D12VDPRenderer::Impl {
                                             D3D12_BARRIER_SYNC_COMPUTE_SHADING, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
 
             // Layer outputs 2D texture array
-            {
-                // The array contains:
-                //   [0..3] NBG0-3
-                //   [4..5] RBG0-1
-                //      [6] Sprite
-                //      [7] Transparent meshes
-                // The alpha channel is used for pixel attributes:
-                //   [0..2] Priority
-                //      [6] Color format (0=RGB, 1=Palette)
-                //      [7] Special color calculation flag
-                static constexpr UINT16 kNumLayers = 4 + 2 + 1 + 1;
-                static constexpr DXGI_FORMAT kFormat = DXGI_FORMAT_R8G8B8A8_UINT;
-
-                auto builder = frameCtx.layerOutTexture.Texture2DBuilder(kMaxResH, kMaxResV, kNumLayers);
-                builder.Format(kFormat);
-                builder.Flags(D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
-                if (HRESULT hr = builder.BuildCommitted(device); FAILED(hr)) {
-                    return util::ErrorMessage{fmt::format(
-                        "Could not create layer outputs texture array #{}, error code {:X}", i, (uint32)hr)};
-                }
-                frameCtx.layerOutTexture->SetName(
-                    fmt::format(L"[Ymir-VDP2] Layer outputs texture array #{}", i).c_str());
-
-                barrierTracker.InitializeTexture(frameCtx.layerOutTexture.GetPointer(),
-                                                 D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,
-                                                 D3D12_BARRIER_SYNC_COMPUTE_SHADING,
-                                                 D3D12_BARRIER_ACCESS_SHADER_RESOURCE, D3D12_BARRIER_LAYOUT_COMMON);
-
-                if (!offlineHeapAlloc.Allocate(frameCtx.layerOutSRV)) {
-                    return util::ErrorMessage{fmt::format("Could not allocate layer outputs texture array SRV #{}", i)};
-                }
-                const D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{
-                    .Format = kFormat,
-                    .ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2DARRAY,
-                    .Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
-                    .Texture2DArray =
-                        {
-                            .MostDetailedMip = 0,
-                            .MipLevels = 1,
-                            .FirstArraySlice = 0,
-                            .ArraySize = kNumLayers,
-                            .PlaneSlice = 0,
-                            .ResourceMinLODClamp = 0.0f,
-                        },
-                };
-                device->CreateShaderResourceView(frameCtx.layerOutTexture.GetPointer(), &srvDesc,
-                                                 frameCtx.layerOutSRV.cpuHandle);
-
-                if (!offlineHeapAlloc.Allocate(frameCtx.layerOutUAV)) {
-                    return util::ErrorMessage{fmt::format("Could not allocate layer outputs texture array UAV #{}", i)};
-                }
-                const D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc{
-                    .Format = kFormat,
-                    .ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2DARRAY,
-                    .Texture2DArray =
-                        {
-                            .MipSlice = 0,
-                            .FirstArraySlice = 0,
-                            .ArraySize = kNumLayers,
-                            .PlaneSlice = 0,
-                        },
-                };
-                device->CreateUnorderedAccessView(frameCtx.layerOutTexture.GetPointer(), nullptr, &uavDesc,
-                                                  frameCtx.layerOutUAV.cpuHandle);
+            if (auto result =
+                    Create2DTextureArray(frameCtx.layerOutTexture, DXGI_FORMAT_R8G8B8A8_UINT, kMaxResH, kMaxResV,
+                                         // The array contains:
+                                         //   [0..3] NBG0-3
+                                         //   [4..5] RBG0-1
+                                         //      [6] Sprite
+                                         //      [7] Transparent meshes
+                                         // The alpha channel is used for pixel attributes:
+                                         //   [0..2] Priority
+                                         //      [6] Color format (0=RGB, 1=Palette)
+                                         //      [7] Special color calculation flag
+                                         4 + 2 + 1 + 1,
+                                         {
+                                             .srv = &frameCtx.layerOutSRV,
+                                             .uav = &frameCtx.layerOutUAV,
+                                             .name = fmt::format("[Ymir-VDP2] Layer outputs texture array #{}", i),
+                                         });
+                !result) {
+                return result;
             }
+            barrierTracker.InitializeTexture(
+                frameCtx.layerOutTexture.GetPointer(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,
+                D3D12_BARRIER_SYNC_COMPUTE_SHADING, D3D12_BARRIER_ACCESS_SHADER_RESOURCE, D3D12_BARRIER_LAYOUT_COMMON);
 
             // RBG0-1 line color outputs 2D texture array
-            {
-                static constexpr UINT16 kNumLayers = 2;
-                static constexpr DXGI_FORMAT kFormat = DXGI_FORMAT_R8G8B8A8_UINT;
-
-                auto builder =
-                    frameCtx.rbgLineColorOutTexture.Texture2DBuilder(kMaxNormalResH, kMaxNormalResV, kNumLayers);
-                builder.Format(kFormat);
-                builder.Flags(D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
-                if (HRESULT hr = builder.BuildCommitted(device); FAILED(hr)) {
-                    return util::ErrorMessage{fmt::format(
-                        "Could not create RBG line color outputs texture array #{}, error code {:X}", i, (uint32)hr)};
-                }
-                frameCtx.rbgLineColorOutTexture->SetName(
-                    fmt::format(L"[Ymir-VDP2] RBG line color outputs texture array #{}", i).c_str());
-
-                barrierTracker.InitializeTexture(frameCtx.rbgLineColorOutTexture.GetPointer(),
-                                                 D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,
-                                                 D3D12_BARRIER_SYNC_COMPUTE_SHADING,
-                                                 D3D12_BARRIER_ACCESS_SHADER_RESOURCE, D3D12_BARRIER_LAYOUT_COMMON);
-
-                if (!offlineHeapAlloc.Allocate(frameCtx.rbgLineColorOutSRV)) {
-                    return util::ErrorMessage{
-                        fmt::format("Could not allocate RBG line color outputs texture array SRV #{}", i)};
-                }
-                const D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{
-                    .Format = kFormat,
-                    .ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2DARRAY,
-                    .Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
-                    .Texture2DArray =
-                        {
-                            .MostDetailedMip = 0,
-                            .MipLevels = 1,
-                            .FirstArraySlice = 0,
-                            .ArraySize = kNumLayers,
-                            .PlaneSlice = 0,
-                            .ResourceMinLODClamp = 0.0f,
-                        },
-                };
-                device->CreateShaderResourceView(frameCtx.rbgLineColorOutTexture.GetPointer(), &srvDesc,
-                                                 frameCtx.rbgLineColorOutSRV.cpuHandle);
-
-                if (!offlineHeapAlloc.Allocate(frameCtx.rbgLineColorOutUAV)) {
-                    return util::ErrorMessage{
-                        fmt::format("Could not allocate RBG line color outputs texture array UAV #{}", i)};
-                }
-                const D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc{
-                    .Format = kFormat,
-                    .ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2DARRAY,
-                    .Texture2DArray =
-                        {
-                            .MipSlice = 0,
-                            .FirstArraySlice = 0,
-                            .ArraySize = kNumLayers,
-                            .PlaneSlice = 0,
-                        },
-                };
-                device->CreateUnorderedAccessView(frameCtx.rbgLineColorOutTexture.GetPointer(), nullptr, &uavDesc,
-                                                  frameCtx.rbgLineColorOutUAV.cpuHandle);
+            if (auto result = Create2DTextureArray(
+                    frameCtx.rbgLineColorOutTexture, DXGI_FORMAT_R8G8B8A8_UINT, kMaxNormalResH, kMaxNormalResV, 2,
+                    {
+                        .srv = &frameCtx.rbgLineColorOutSRV,
+                        .uav = &frameCtx.rbgLineColorOutUAV,
+                        .name = fmt::format("[Ymir-VDP2] RBG line color outputs texture array #{}", i),
+                    });
+                !result) {
+                return result;
             }
+            barrierTracker.InitializeTexture(
+                frameCtx.rbgLineColorOutTexture.GetPointer(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,
+                D3D12_BARRIER_SYNC_COMPUTE_SHADING, D3D12_BARRIER_ACCESS_SHADER_RESOURCE, D3D12_BARRIER_LAYOUT_COMMON);
 
             // Color calculation window texture
-            {
-                static constexpr DXGI_FORMAT kFormat = DXGI_FORMAT_R8_UINT;
-
-                auto builder = frameCtx.colorCalcWindowTexture.Texture2DBuilder(kMaxResH, kMaxResV);
-                builder.Format(kFormat);
-                builder.Flags(D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
-                if (HRESULT hr = builder.BuildCommitted(device); FAILED(hr)) {
-                    return util::ErrorMessage{fmt::format(
-                        "Could not create color calculation window texture #{}, error code {:X}", i, (uint32)hr)};
-                }
-                frameCtx.colorCalcWindowTexture->SetName(
-                    fmt::format(L"[Ymir-VDP2] Color calculation window texture #{}", i).c_str());
-
-                barrierTracker.InitializeTexture(frameCtx.colorCalcWindowTexture.GetPointer(),
-                                                 D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,
-                                                 D3D12_BARRIER_SYNC_COMPUTE_SHADING,
-                                                 D3D12_BARRIER_ACCESS_SHADER_RESOURCE, D3D12_BARRIER_LAYOUT_COMMON);
-
-                if (!offlineHeapAlloc.Allocate(frameCtx.colorCalcWindowSRV)) {
-                    return util::ErrorMessage{
-                        fmt::format("Could not allocate color calculation window texture SRV #{}", i)};
-                }
-                const D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{
-                    .Format = kFormat,
-                    .ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D,
-                    .Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
-                    .Texture2D =
-                        {
-                            .MostDetailedMip = 0,
-                            .MipLevels = 1,
-                            .PlaneSlice = 0,
-                            .ResourceMinLODClamp = 0.0f,
-                        },
-                };
-                device->CreateShaderResourceView(frameCtx.colorCalcWindowTexture.GetPointer(), &srvDesc,
-                                                 frameCtx.colorCalcWindowSRV.cpuHandle);
-
-                if (!offlineHeapAlloc.Allocate(frameCtx.colorCalcWindowUAV)) {
-                    return util::ErrorMessage{
-                        fmt::format("Could not allocate color calculation window texture UAV #{}", i)};
-                }
-                const D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc{
-                    .Format = kFormat,
-                    .ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D,
-                    .Texture2D =
-                        {
-                            .MipSlice = 0,
-                            .PlaneSlice = 0,
-                        },
-                };
-                device->CreateUnorderedAccessView(frameCtx.colorCalcWindowTexture.GetPointer(), nullptr, &uavDesc,
-                                                  frameCtx.colorCalcWindowUAV.cpuHandle);
+            if (auto result =
+                    Create2DTexture(frameCtx.colorCalcWindowTexture, DXGI_FORMAT_R8_UINT, kMaxResH, kMaxResV,
+                                    {
+                                        .srv = &frameCtx.colorCalcWindowSRV,
+                                        .uav = &frameCtx.colorCalcWindowUAV,
+                                        .name = fmt::format("[Ymir-VDP2] Color calculation window texture #{}", i),
+                                    });
+                !result) {
+                return result;
             }
+            barrierTracker.InitializeTexture(
+                frameCtx.colorCalcWindowTexture.GetPointer(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,
+                D3D12_BARRIER_SYNC_COMPUTE_SHADING, D3D12_BARRIER_ACCESS_SHADER_RESOURCE, D3D12_BARRIER_LAYOUT_COMMON);
 
             // LNCL/BACK screen buffer
             if (auto result =
@@ -1866,64 +1853,19 @@ struct Direct3D12VDPRenderer::Impl {
                                             D3D12_BARRIER_SYNC_COMPUTE_SHADING, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
 
             // VDP2 sprite attributes 2D texture array
-            {
-                static constexpr UINT16 kNumLayers = 2;
-                static constexpr DXGI_FORMAT kFormat = DXGI_FORMAT_R16_UINT;
-
-                auto builder = frameCtx.spriteAttrsTexture.Texture2DBuilder(kMaxResH, kMaxResV, kNumLayers);
-                builder.Format(kFormat);
-                builder.Flags(D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
-                if (HRESULT hr = builder.BuildCommitted(device); FAILED(hr)) {
-                    return util::ErrorMessage{fmt::format(
-                        "Could not create sprite attributes texture array #{}, error code {:X}", i, (uint32)hr)};
-                }
-                frameCtx.spriteAttrsTexture->SetName(
-                    fmt::format(L"[Ymir-VDP2] Sprite attributes texture array #{}", i).c_str());
-
-                barrierTracker.InitializeTexture(frameCtx.spriteAttrsTexture.GetPointer(),
-                                                 D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,
-                                                 D3D12_BARRIER_SYNC_COMPUTE_SHADING,
-                                                 D3D12_BARRIER_ACCESS_SHADER_RESOURCE, D3D12_BARRIER_LAYOUT_COMMON);
-
-                if (!offlineHeapAlloc.Allocate(frameCtx.spriteAttrsSRV)) {
-                    return util::ErrorMessage{
-                        fmt::format("Could not allocate sprite attributes texture array SRV #{}", i)};
-                }
-                const D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{
-                    .Format = kFormat,
-                    .ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2DARRAY,
-                    .Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
-                    .Texture2DArray =
-                        {
-                            .MostDetailedMip = 0,
-                            .MipLevels = 1,
-                            .FirstArraySlice = 0,
-                            .ArraySize = kNumLayers,
-                            .PlaneSlice = 0,
-                            .ResourceMinLODClamp = 0.0f,
-                        },
-                };
-                device->CreateShaderResourceView(frameCtx.spriteAttrsTexture.GetPointer(), &srvDesc,
-                                                 frameCtx.spriteAttrsSRV.cpuHandle);
-
-                if (!offlineHeapAlloc.Allocate(frameCtx.spriteAttrsUAV)) {
-                    return util::ErrorMessage{
-                        fmt::format("Could not allocate sprite attributes texture array UAV #{}", i)};
-                }
-                const D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc{
-                    .Format = kFormat,
-                    .ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2DARRAY,
-                    .Texture2DArray =
-                        {
-                            .MipSlice = 0,
-                            .FirstArraySlice = 0,
-                            .ArraySize = kNumLayers,
-                            .PlaneSlice = 0,
-                        },
-                };
-                device->CreateUnorderedAccessView(frameCtx.spriteAttrsTexture.GetPointer(), nullptr, &uavDesc,
-                                                  frameCtx.spriteAttrsUAV.cpuHandle);
+            if (auto result =
+                    Create2DTextureArray(frameCtx.spriteAttrsTexture, DXGI_FORMAT_R8_UINT, kMaxResH, kMaxResV, 2,
+                                         {
+                                             .srv = &frameCtx.spriteAttrsSRV,
+                                             .uav = &frameCtx.spriteAttrsUAV,
+                                             .name = fmt::format("[Ymir-VDP2] Sprite attributes texture array #{}", i),
+                                         });
+                !result) {
+                return result;
             }
+            barrierTracker.InitializeTexture(
+                frameCtx.spriteAttrsTexture.GetPointer(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,
+                D3D12_BARRIER_SYNC_COMPUTE_SHADING, D3D12_BARRIER_ACCESS_SHADER_RESOURCE, D3D12_BARRIER_LAYOUT_COMMON);
 
             // VDP2 layer rendering parameters buffer
             if (auto result = CreateStructuredBuffer<VDP2LayerRenderParams>(

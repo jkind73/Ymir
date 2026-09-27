@@ -802,6 +802,77 @@ struct Direct3D12VDPRenderer::Impl {
         return {};
     }
 
+    struct BufferSpec {
+        UINT64 size;
+        DescriptorRange *srv = nullptr;
+        DescriptorRange *uav = nullptr;
+        std::string name;
+    };
+
+    /// @brief Creates a ByteAddressArray buffer.
+    /// @param[out] buffer the resource object to create
+    /// @param[in] spec buffer specifications
+    /// @return nothing, or an error message
+    [[nodiscard]] util::VoidResult<> CreateRawBuffer(D3D12Resource &buffer, const BufferSpec &spec) {
+        const UINT64 viewSize = spec.size / sizeof(HLSLuint);
+        if (viewSize != static_cast<UINT>(viewSize)) {
+            return util::ErrorMessage{
+                fmt::format("Could not create raw buffer \"{}\": buffer is too large", spec.name)};
+        }
+
+        D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE;
+        if (spec.uav != nullptr) {
+            flags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+        }
+
+        auto builder = buffer.BufferBuilder(spec.size);
+        builder.Flags(flags);
+        if (HRESULT hr = builder.BuildCommitted(device); FAILED(hr)) {
+            return util::ErrorMessage{
+                fmt::format("Could not create raw buffer \"{}\", error code {:X}", spec.name, (uint32)hr)};
+        }
+        buffer->SetName(util::StringToWString(spec.name).c_str());
+
+        if (spec.srv != nullptr) {
+            if (!offlineHeapAlloc.Allocate(*spec.srv)) {
+                return util::ErrorMessage{fmt::format("Could not allocate raw buffer \"{}\" SRV", spec.name)};
+            }
+            const D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{
+                .Format = DXGI_FORMAT_R32_TYPELESS,
+                .ViewDimension = D3D12_SRV_DIMENSION_BUFFER,
+                .Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
+                .Buffer =
+                    {
+                        .FirstElement = 0,
+                        .NumElements = static_cast<UINT>(viewSize),
+                        .StructureByteStride = 0,
+                        .Flags = D3D12_BUFFER_SRV_FLAG_RAW,
+                    },
+            };
+            device->CreateShaderResourceView(buffer.GetPointer(), &srvDesc, spec.srv->cpuHandle);
+        }
+        if (spec.uav != nullptr) {
+            if (!offlineHeapAlloc.Allocate(*spec.uav)) {
+                return util::ErrorMessage{fmt::format("Could not allocate raw buffer \"{}\" UAV", spec.name)};
+            }
+            const D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc{
+                .Format = DXGI_FORMAT_R32_TYPELESS,
+                .ViewDimension = D3D12_UAV_DIMENSION_BUFFER,
+                .Buffer =
+                    {
+                        .FirstElement = 0,
+                        .NumElements = static_cast<UINT>(viewSize),
+                        .StructureByteStride = 0,
+                        .CounterOffsetInBytes = 0,
+                        .Flags = D3D12_BUFFER_UAV_FLAG_RAW,
+                    },
+            };
+            device->CreateUnorderedAccessView(buffer.GetPointer(), nullptr, &uavDesc, spec.uav->cpuHandle);
+        }
+
+        return {};
+    }
+
     // =================================================================================================================
     // Operations
 
@@ -888,91 +959,35 @@ struct Direct3D12VDPRenderer::Impl {
         // Common resources
 
         // VDP1 VRAM buffer
-        {
-            auto builder = vdp1.vramBuffer.BufferBuilder(kVDP1VRAMSize);
-            if (HRESULT hr = builder.BuildCommitted(device); FAILED(hr)) {
-                return util::ErrorMessage{
-                    fmt::format("Could not create VDP1 VRAM buffer, error code {:X}", (uint32)hr)};
-            }
-            vdp1.vramBuffer->SetName(L"[Ymir-VDP1] VRAM buffer");
-
-            barrierTracker.InitializeBuffer(vdp1.vramBuffer.GetPointer(),
-                                            D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,
-                                            D3D12_BARRIER_SYNC_COMPUTE_SHADING, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
-
-            if (!offlineHeapAlloc.Allocate(vdp1.vramSRV)) {
-                return util::ErrorMessage{"Could not allocate VDP1 VRAM buffer SRV"};
-            }
-            const D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{
-                .Format = DXGI_FORMAT_R32_TYPELESS,
-                .ViewDimension = D3D12_SRV_DIMENSION_BUFFER,
-                .Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
-                .Buffer =
-                    {
-                        .FirstElement = 0,
-                        .NumElements = kVDP1VRAMSize / sizeof(uint32),
-                        .StructureByteStride = 0,
-                        .Flags = D3D12_BUFFER_SRV_FLAG_RAW,
-                    },
-            };
-            device->CreateShaderResourceView(vdp1.vramBuffer.GetPointer(), &srvDesc, vdp1.vramSRV.cpuHandle);
+        if (auto result = CreateRawBuffer(vdp1.vramBuffer,
+                                          {
+                                              .size = kVDP1VRAMSize,
+                                              .srv = &vdp1.vramSRV,
+                                              .name = "[Ymir-VDP1] VRAM buffer",
+                                          });
+            !result) {
+            return result;
         }
+        barrierTracker.InitializeBuffer(vdp1.vramBuffer.GetPointer(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,
+                                        D3D12_BARRIER_SYNC_COMPUTE_SHADING, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
 
         // VDP1 FBRAM buffer
-        {
-            // kVDP1FBRAMSize is the size of a single framebuffer.
-            // VDP1 FBRAM actually contains two frames.
-            // *2 for deinterlace alternate field
-            // *2 for transparent mesh buffer
-            static constexpr UINT64 kSize = kVDP1FBRAMSize * 2 * 2 * 2;
-
-            auto builder = vdp1.fbramBuffer.BufferBuilder(kSize);
-            builder.Flags(D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
-            if (HRESULT hr = builder.BuildCommitted(device); FAILED(hr)) {
-                return util::ErrorMessage{
-                    fmt::format("Could not create VDP1 FBRAM buffer, error code {:X}", (uint32)hr)};
-            }
-            vdp1.fbramBuffer->SetName(L"[Ymir-VDP1] FBRAM buffer");
-
-            barrierTracker.InitializeBuffer(vdp1.fbramBuffer.GetPointer(),
-                                            D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,
-                                            D3D12_BARRIER_SYNC_COMPUTE_SHADING, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
-
-            if (!offlineHeapAlloc.Allocate(vdp1.fbramSRV)) {
-                return util::ErrorMessage{"Could not allocate VDP1 FBRAM buffer SRV"};
-            }
-            const D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{
-                .Format = DXGI_FORMAT_R32_TYPELESS,
-                .ViewDimension = D3D12_SRV_DIMENSION_BUFFER,
-                .Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
-                .Buffer =
-                    {
-                        .FirstElement = 0,
-                        .NumElements = kSize / sizeof(uint32),
-                        .StructureByteStride = 0,
-                        .Flags = D3D12_BUFFER_SRV_FLAG_RAW,
-                    },
-            };
-            device->CreateShaderResourceView(vdp1.fbramBuffer.GetPointer(), &srvDesc, vdp1.fbramSRV.cpuHandle);
-
-            if (!offlineHeapAlloc.Allocate(vdp1.fbramUAV)) {
-                return util::ErrorMessage{"Could not allocate VDP1 FBRAM buffer UAV"};
-            }
-            const D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc{
-                .Format = DXGI_FORMAT_R32_TYPELESS,
-                .ViewDimension = D3D12_UAV_DIMENSION_BUFFER,
-                .Buffer =
-                    {
-                        .FirstElement = 0,
-                        .NumElements = kSize / sizeof(uint32),
-                        .StructureByteStride = 0,
-                        .CounterOffsetInBytes = 0,
-                        .Flags = D3D12_BUFFER_UAV_FLAG_RAW,
-                    },
-            };
-            device->CreateUnorderedAccessView(vdp1.fbramBuffer.GetPointer(), nullptr, &uavDesc,
-                                              vdp1.fbramUAV.cpuHandle);
+        if (auto result = CreateRawBuffer(vdp1.fbramBuffer,
+                                          {
+                                              // kVDP1FBRAMSize is the size of a single framebuffer.
+                                              // *2 for the the two framebuffers in VDP1 FBRAM.
+                                              // *2 for deinterlace alternate field buffers.
+                                              // *2 for transparent mesh buffers.
+                                              .size = kVDP1FBRAMSize * 2 * 2 * 2,
+                                              .srv = &vdp1.fbramSRV,
+                                              .uav = &vdp1.fbramUAV,
+                                              .name = "[Ymir-VDP1] FBRAM buffer",
+                                          });
+            !result) {
+            return result;
         }
+        barrierTracker.InitializeBuffer(vdp1.fbramBuffer.GetPointer(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,
+                                        D3D12_BARRIER_SYNC_COMPUTE_SHADING, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
 
         // VDP1 FBRAM writes buffer
         {
@@ -1402,38 +1417,19 @@ struct Direct3D12VDPRenderer::Impl {
             }
 
             // OIT counter buffer
-            {
-                // This buffer contains a single `uint` used as an atomic counter.
-                auto builder = frameCtx.oitCounterBuffer.BufferBuilder(sizeof(HLSLuint));
-                builder.Flags(D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
-                if (HRESULT hr = builder.BuildCommitted(device); FAILED(hr)) {
-                    return util::ErrorMessage{
-                        fmt::format("Could not create VDP1 OIT counter buffer #{}, error code {:X}", i, (uint32)hr)};
-                }
-                frameCtx.oitCounterBuffer->SetName(fmt::format(L"[Ymir-VDP1] OIT counter buffer #{}", i).c_str());
-
-                barrierTracker.InitializeBuffer(
-                    frameCtx.oitCounterBuffer.GetPointer(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
-                    D3D12_BARRIER_SYNC_COMPUTE_SHADING, D3D12_BARRIER_ACCESS_UNORDERED_ACCESS);
-
-                if (!offlineHeapAlloc.Allocate(frameCtx.oitCounterUAV)) {
-                    return util::ErrorMessage{fmt::format("Could not allocate VDP1 OIT counter buffer UAV #{}", i)};
-                }
-                const D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc{
-                    .Format = DXGI_FORMAT_R32_TYPELESS,
-                    .ViewDimension = D3D12_UAV_DIMENSION_BUFFER,
-                    .Buffer =
-                        {
-                            .FirstElement = 0,
-                            .NumElements = 1,
-                            .StructureByteStride = 0,
-                            .CounterOffsetInBytes = 0,
-                            .Flags = D3D12_BUFFER_UAV_FLAG_RAW,
-                        },
-                };
-                device->CreateUnorderedAccessView(frameCtx.oitCounterBuffer.GetPointer(), nullptr, &uavDesc,
-                                                  frameCtx.oitCounterUAV.cpuHandle);
+            // This buffer contains a single `uint` used as an atomic counter.
+            if (auto result = CreateRawBuffer(frameCtx.oitCounterBuffer,
+                                              {
+                                                  .size = sizeof(HLSLuint),
+                                                  .uav = &frameCtx.oitCounterUAV,
+                                                  .name = fmt::format("[Ymir-VDP1] OIT counter buffer #{}", i),
+                                              });
+                !result) {
+                return result;
             }
+            barrierTracker.InitializeBuffer(frameCtx.oitCounterBuffer.GetPointer(),
+                                            D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_BARRIER_SYNC_COMPUTE_SHADING,
+                                            D3D12_BARRIER_ACCESS_UNORDERED_ACCESS);
 
             // Framebuffer erase
             {
@@ -1583,35 +1579,17 @@ struct Direct3D12VDPRenderer::Impl {
         // Common resources
 
         // VDP2 VRAM buffer
-        {
-            auto builder = vdp2.vramBuffer.BufferBuilder(kVDP2VRAMSize);
-            if (HRESULT hr = builder.BuildCommitted(device); FAILED(hr)) {
-                return util::ErrorMessage{
-                    fmt::format("Could not create VDP2 VRAM buffer, error code {:X}", (uint32)hr)};
-            }
-            vdp2.vramBuffer->SetName(L"[Ymir-VDP2] VRAM buffer");
-
-            barrierTracker.InitializeBuffer(vdp2.vramBuffer.GetPointer(),
-                                            D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,
-                                            D3D12_BARRIER_SYNC_COMPUTE_SHADING, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
-
-            if (!offlineHeapAlloc.Allocate(vdp2.vramSRV)) {
-                return util::ErrorMessage{"Could not allocate VDP2 VRAM buffer SRV"};
-            }
-            const D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{
-                .Format = DXGI_FORMAT_R32_TYPELESS,
-                .ViewDimension = D3D12_SRV_DIMENSION_BUFFER,
-                .Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
-                .Buffer =
-                    {
-                        .FirstElement = 0,
-                        .NumElements = kVDP2VRAMSize / sizeof(uint32),
-                        .StructureByteStride = 0,
-                        .Flags = D3D12_BUFFER_SRV_FLAG_RAW,
-                    },
-            };
-            device->CreateShaderResourceView(vdp2.vramBuffer.GetPointer(), &srvDesc, vdp2.vramSRV.cpuHandle);
+        if (auto result = CreateRawBuffer(vdp2.vramBuffer,
+                                          {
+                                              .size = kVDP2VRAMSize,
+                                              .srv = &vdp2.vramSRV,
+                                              .name = "[Ymir-VDP2] VRAM buffer",
+                                          });
+            !result) {
+            return result;
         }
+        barrierTracker.InitializeBuffer(vdp2.vramBuffer.GetPointer(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,
+                                        D3D12_BARRIER_SYNC_COMPUTE_SHADING, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
 
         // Composited VDP2 output texture
         {
@@ -1742,39 +1720,19 @@ struct Direct3D12VDPRenderer::Impl {
             }
 
             // VDP2 CRAM rotation coefficients buffer
-            {
-
-                auto builder = frameCtx.cramRotCoeffBuffer.BufferBuilder(kVDP2CRAMRotCoeffBufferSize);
-                if (HRESULT hr = builder.BuildCommitted(device); FAILED(hr)) {
-                    return util::ErrorMessage{fmt::format(
-                        "Could not create VDP2 CRAM rotation coefficients buffer #{}, error code {:X}", i, (uint32)hr)};
-                }
-                frameCtx.cramRotCoeffBuffer->SetName(
-                    fmt::format(L"[Ymir-VDP2] CRAM rotation coefficients buffer #{}", i).c_str());
-
-                barrierTracker.InitializeBuffer(
-                    frameCtx.cramRotCoeffBuffer.GetPointer(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,
-                    D3D12_BARRIER_SYNC_COMPUTE_SHADING, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
-
-                if (!offlineHeapAlloc.Allocate(frameCtx.cramRotCoeffSRV)) {
-                    return util::ErrorMessage{
-                        fmt::format("Could not allocate VDP2 CRAM rotation coefficients buffer SRV #{}", i)};
-                }
-                const D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{
-                    .Format = DXGI_FORMAT_R32_TYPELESS,
-                    .ViewDimension = D3D12_SRV_DIMENSION_BUFFER,
-                    .Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
-                    .Buffer =
-                        {
-                            .FirstElement = 0,
-                            .NumElements = kVDP2CRAMRotCoeffBufferSize / sizeof(uint32),
-                            .StructureByteStride = 0,
-                            .Flags = D3D12_BUFFER_SRV_FLAG_RAW,
-                        },
-                };
-                device->CreateShaderResourceView(frameCtx.cramRotCoeffBuffer.GetPointer(), &srvDesc,
-                                                 frameCtx.cramRotCoeffSRV.cpuHandle);
+            if (auto result =
+                    CreateRawBuffer(frameCtx.cramRotCoeffBuffer,
+                                    {
+                                        .size = kVDP2CRAMRotCoeffBufferSize,
+                                        .srv = &frameCtx.cramRotCoeffSRV,
+                                        .name = fmt::format("[Ymir-VDP2] CRAM rotation coefficients buffer #{}", i),
+                                    });
+                !result) {
+                return result;
             }
+            barrierTracker.InitializeBuffer(frameCtx.cramRotCoeffBuffer.GetPointer(),
+                                            D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,
+                                            D3D12_BARRIER_SYNC_COMPUTE_SHADING, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
 
             // Layer outputs 2D texture array
             {

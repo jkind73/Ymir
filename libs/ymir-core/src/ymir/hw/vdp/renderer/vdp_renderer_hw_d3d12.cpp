@@ -809,69 +809,122 @@ struct Direct3D12VDPRenderer::Impl {
         std::string name;
     };
 
-    /// @brief Creates a ByteAddressBuffer.
+    enum class BufferType { Raw, Primitive, Structured };
+
+    struct FullBufferSpec {
+        BufferSpec bufferSpec;
+        BufferType type;
+        union {
+            struct {
+                UINT64 size;
+            } raw;
+            struct {
+                DXGI_FORMAT format;
+                UINT numElements;
+            } primitive;
+            struct {
+                UINT elementSize;
+                UINT numElements;
+            } structured;
+        };
+    };
+
+    /// @brief Creates a buffer.
     /// @param[out] buffer the resource object to create
-    /// @param[in] size buffer size in bytes
     /// @param[in] spec buffer specifications
     /// @return nothing, or an error message
-    [[nodiscard]] util::VoidResult<> CreateRawBuffer(D3D12Resource &buffer, UINT64 size, const BufferSpec &spec) {
+    [[nodiscard]] util::VoidResult<> CreateBuffer(D3D12Resource &buffer, const FullBufferSpec &spec) {
+        const bool raw = spec.type == BufferType::Raw;
+        const bool primitive = spec.type == BufferType::Primitive;
+        const bool structured = spec.type == BufferType::Structured;
+        assert(raw || primitive || structured);
+
+        const char *bufferTypeName = raw ? "raw" : primitive ? "primitive" : "structured";
+
+        const UINT64 elementSize = raw         ? 1u
+                                   : primitive ? GetElementSize(spec.primitive.format)
+                                               : spec.structured.elementSize;
+        const UINT64 numElements = raw         ? spec.raw.size
+                                   : primitive ? spec.primitive.numElements
+                                               : spec.structured.numElements;
+        const UINT64 size = elementSize * numElements;
         const UINT64 viewSize = size / sizeof(HLSLuint);
         if (viewSize != static_cast<UINT>(viewSize)) {
-            return util::ErrorMessage{
-                fmt::format("Could not create raw buffer \"{}\": buffer is too large", spec.name)};
+            return util::ErrorMessage{fmt::format("Could not create {} buffer \"{}\": buffer is too large",
+                                                  bufferTypeName, spec.bufferSpec.name)};
         }
 
         D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE;
-        if (spec.uav != nullptr) {
+        if (spec.bufferSpec.uav != nullptr) {
             flags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
         }
 
         auto builder = buffer.BufferBuilder(size);
         builder.Flags(flags);
         if (HRESULT hr = builder.BuildCommitted(device); FAILED(hr)) {
-            return util::ErrorMessage{
-                fmt::format("Could not create raw buffer \"{}\", error code {:X}", spec.name, (uint32)hr)};
+            return util::ErrorMessage{fmt::format("Could not create {} buffer \"{}\", error code {:X}", bufferTypeName,
+                                                  spec.bufferSpec.name, (uint32)hr)};
         }
-        buffer->SetName(util::StringToWString(spec.name).c_str());
+        buffer->SetName(util::StringToWString(spec.bufferSpec.name).c_str());
 
-        if (spec.srv != nullptr) {
-            if (!offlineHeapAlloc.Allocate(*spec.srv)) {
-                return util::ErrorMessage{fmt::format("Could not allocate raw buffer \"{}\" SRV", spec.name)};
+        const DXGI_FORMAT format = raw         ? DXGI_FORMAT_R32_TYPELESS
+                                   : primitive ? spec.primitive.format
+                                               : DXGI_FORMAT_UNKNOWN;
+
+        if (spec.bufferSpec.srv != nullptr) {
+            if (!offlineHeapAlloc.Allocate(*spec.bufferSpec.srv)) {
+                return util::ErrorMessage{
+                    fmt::format("Could not allocate {} buffer \"{}\" SRV", bufferTypeName, spec.bufferSpec.name)};
             }
             const D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{
-                .Format = DXGI_FORMAT_R32_TYPELESS,
+                .Format = format,
                 .ViewDimension = D3D12_SRV_DIMENSION_BUFFER,
                 .Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
                 .Buffer =
                     {
                         .FirstElement = 0,
-                        .NumElements = static_cast<UINT>(viewSize),
-                        .StructureByteStride = 0,
-                        .Flags = D3D12_BUFFER_SRV_FLAG_RAW,
+                        .NumElements = static_cast<UINT>(structured ? numElements : viewSize),
+                        .StructureByteStride = structured ? static_cast<UINT>(elementSize) : 0u,
+                        .Flags = raw ? D3D12_BUFFER_SRV_FLAG_RAW : D3D12_BUFFER_SRV_FLAG_NONE,
                     },
             };
-            device->CreateShaderResourceView(buffer.GetPointer(), &srvDesc, spec.srv->cpuHandle);
+            device->CreateShaderResourceView(buffer.GetPointer(), &srvDesc, spec.bufferSpec.srv->cpuHandle);
         }
-        if (spec.uav != nullptr) {
-            if (!offlineHeapAlloc.Allocate(*spec.uav)) {
-                return util::ErrorMessage{fmt::format("Could not allocate raw buffer \"{}\" UAV", spec.name)};
+        if (spec.bufferSpec.uav != nullptr) {
+            if (!offlineHeapAlloc.Allocate(*spec.bufferSpec.uav)) {
+                return util::ErrorMessage{
+                    fmt::format("Could not allocate {} buffer \"{}\" UAV", bufferTypeName, spec.bufferSpec.name)};
             }
             const D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc{
-                .Format = DXGI_FORMAT_R32_TYPELESS,
+                .Format = format,
                 .ViewDimension = D3D12_UAV_DIMENSION_BUFFER,
                 .Buffer =
                     {
                         .FirstElement = 0,
-                        .NumElements = static_cast<UINT>(viewSize),
-                        .StructureByteStride = 0,
+                        .NumElements = static_cast<UINT>(structured ? numElements : viewSize),
+                        .StructureByteStride = structured ? static_cast<UINT>(elementSize) : 0u,
                         .CounterOffsetInBytes = 0,
-                        .Flags = D3D12_BUFFER_UAV_FLAG_RAW,
+                        .Flags = raw ? D3D12_BUFFER_UAV_FLAG_RAW : D3D12_BUFFER_UAV_FLAG_NONE,
                     },
             };
-            device->CreateUnorderedAccessView(buffer.GetPointer(), nullptr, &uavDesc, spec.uav->cpuHandle);
+            device->CreateUnorderedAccessView(buffer.GetPointer(), nullptr, &uavDesc, spec.bufferSpec.uav->cpuHandle);
         }
 
         return {};
+    }
+
+    /// @brief Creates a ByteAddressBuffer.
+    /// @param[out] buffer the resource object to create
+    /// @param[in] size buffer size in bytes
+    /// @param[in] spec buffer specifications
+    /// @return nothing, or an error message
+    [[nodiscard]] util::VoidResult<> CreateRawBuffer(D3D12Resource &buffer, UINT64 size, const BufferSpec &spec) {
+        const FullBufferSpec fullSpec{
+            .bufferSpec = spec,
+            .type = BufferType::Raw,
+            .raw = {.size = size},
+        };
+        return CreateBuffer(buffer, fullSpec);
     }
 
     /// @brief Creates a Buffer.
@@ -882,65 +935,16 @@ struct Direct3D12VDPRenderer::Impl {
     /// @return nothing, or an error message
     [[nodiscard]] util::VoidResult<> CreatePrimitiveBuffer(D3D12Resource &buffer, DXGI_FORMAT format, UINT numElements,
                                                            const BufferSpec &spec) {
-        const UINT elementSize = GetElementSize(format);
-        const UINT64 size = static_cast<UINT64>(elementSize) * numElements;
-        const UINT64 viewSize = size / sizeof(HLSLuint);
-        if (viewSize != static_cast<UINT>(viewSize)) {
-            return util::ErrorMessage{
-                fmt::format("Could not create primitive buffer \"{}\": buffer is too large", spec.name)};
-        }
-
-        D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE;
-        if (spec.uav != nullptr) {
-            flags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
-        }
-
-        auto builder = buffer.BufferBuilder(size);
-        builder.Flags(flags);
-        if (HRESULT hr = builder.BuildCommitted(device); FAILED(hr)) {
-            return util::ErrorMessage{
-                fmt::format("Could not create primitive buffer \"{}\", error code {:X}", spec.name, (uint32)hr)};
-        }
-        buffer->SetName(util::StringToWString(spec.name).c_str());
-
-        if (spec.srv != nullptr) {
-            if (!offlineHeapAlloc.Allocate(*spec.srv)) {
-                return util::ErrorMessage{fmt::format("Could not allocate primitive buffer \"{}\" SRV", spec.name)};
-            }
-            const D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{
-                .Format = format,
-                .ViewDimension = D3D12_SRV_DIMENSION_BUFFER,
-                .Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
-                .Buffer =
-                    {
-                        .FirstElement = 0,
-                        .NumElements = static_cast<UINT>(viewSize),
-                        .StructureByteStride = 0,
-                        .Flags = D3D12_BUFFER_SRV_FLAG_NONE,
-                    },
-            };
-            device->CreateShaderResourceView(buffer.GetPointer(), &srvDesc, spec.srv->cpuHandle);
-        }
-        if (spec.uav != nullptr) {
-            if (!offlineHeapAlloc.Allocate(*spec.uav)) {
-                return util::ErrorMessage{fmt::format("Could not allocate primitive buffer \"{}\" UAV", spec.name)};
-            }
-            const D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc{
-                .Format = format,
-                .ViewDimension = D3D12_UAV_DIMENSION_BUFFER,
-                .Buffer =
-                    {
-                        .FirstElement = 0,
-                        .NumElements = static_cast<UINT>(viewSize),
-                        .StructureByteStride = 0,
-                        .CounterOffsetInBytes = 0,
-                        .Flags = D3D12_BUFFER_UAV_FLAG_NONE,
-                    },
-            };
-            device->CreateUnorderedAccessView(buffer.GetPointer(), nullptr, &uavDesc, spec.uav->cpuHandle);
-        }
-
-        return {};
+        const FullBufferSpec fullSpec{
+            .bufferSpec = spec,
+            .type = BufferType::Primitive,
+            .primitive =
+                {
+                    .format = format,
+                    .numElements = numElements,
+                },
+        };
+        return CreateBuffer(buffer, fullSpec);
     }
 
     /// @brief Creates a StructuredBuffer.
@@ -952,64 +956,16 @@ struct Direct3D12VDPRenderer::Impl {
     [[nodiscard]] util::VoidResult<> CreateStructuredBuffer(D3D12Resource &buffer, UINT elementSize, UINT numElements,
                                                             const BufferSpec &spec) {
         assert((elementSize & 3ull) == 0);
-        const UINT64 size = static_cast<UINT64>(elementSize) * numElements;
-        const UINT64 viewSize = size / sizeof(HLSLuint);
-        if (viewSize != static_cast<UINT>(viewSize)) {
-            return util::ErrorMessage{
-                fmt::format("Could not create structured buffer \"{}\": buffer is too large", spec.name)};
-        }
-
-        D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE;
-        if (spec.uav != nullptr) {
-            flags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
-        }
-
-        auto builder = buffer.BufferBuilder(size);
-        builder.Flags(flags);
-        if (HRESULT hr = builder.BuildCommitted(device); FAILED(hr)) {
-            return util::ErrorMessage{
-                fmt::format("Could not create structured buffer \"{}\", error code {:X}", spec.name, (uint32)hr)};
-        }
-        buffer->SetName(util::StringToWString(spec.name).c_str());
-
-        if (spec.srv != nullptr) {
-            if (!offlineHeapAlloc.Allocate(*spec.srv)) {
-                return util::ErrorMessage{fmt::format("Could not allocate structured buffer \"{}\" SRV", spec.name)};
-            }
-            const D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{
-                .Format = DXGI_FORMAT_UNKNOWN,
-                .ViewDimension = D3D12_SRV_DIMENSION_BUFFER,
-                .Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
-                .Buffer =
-                    {
-                        .FirstElement = 0,
-                        .NumElements = numElements,
-                        .StructureByteStride = elementSize,
-                        .Flags = D3D12_BUFFER_SRV_FLAG_NONE,
-                    },
-            };
-            device->CreateShaderResourceView(buffer.GetPointer(), &srvDesc, spec.srv->cpuHandle);
-        }
-        if (spec.uav != nullptr) {
-            if (!offlineHeapAlloc.Allocate(*spec.uav)) {
-                return util::ErrorMessage{fmt::format("Could not allocate structured buffer \"{}\" UAV", spec.name)};
-            }
-            const D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc{
-                .Format = DXGI_FORMAT_UNKNOWN,
-                .ViewDimension = D3D12_UAV_DIMENSION_BUFFER,
-                .Buffer =
-                    {
-                        .FirstElement = 0,
-                        .NumElements = numElements,
-                        .StructureByteStride = elementSize,
-                        .CounterOffsetInBytes = 0,
-                        .Flags = D3D12_BUFFER_UAV_FLAG_NONE,
-                    },
-            };
-            device->CreateUnorderedAccessView(buffer.GetPointer(), nullptr, &uavDesc, spec.uav->cpuHandle);
-        }
-
-        return {};
+        const FullBufferSpec fullSpec{
+            .bufferSpec = spec,
+            .type = BufferType::Structured,
+            .structured =
+                {
+                    .elementSize = elementSize,
+                    .numElements = numElements,
+                },
+        };
+        return CreateBuffer(buffer, fullSpec);
     }
 
     /// @brief Creates a StructuredBuffer.

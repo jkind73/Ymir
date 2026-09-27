@@ -768,7 +768,20 @@ struct Direct3D12VDPRenderer::Impl {
                 fmt::format("Could not build root signature \"{}\", error code {:X}", spec.name, (uint32)hr)};
         }
         vdp1.fbramWriteRootSig->SetName(util::StringToWString(spec.name).c_str());
+        return {};
+    }
 
+    [[nodiscard]] util::VoidResult<> CreatePSO(D3D12PipelineState &pso, D3D12RootSignature &rootSig,
+                                               gpu::ComputeShader &shader, std::string_view name) {
+        const D3D12_COMPUTE_PIPELINE_STATE_DESC psoDesc{
+            .pRootSignature = rootSig.GetPointer(),
+            .CS = ToShaderBytecode(shader),
+        };
+        if (HRESULT hr = pso.CreateCompute(device, psoDesc); FAILED(hr)) {
+            return util::ErrorMessage{
+                fmt::format("Could not build pipeline state object \"{}\", error code {:X}", name, (uint32)hr)};
+        }
+        vdp1.fbramWritePSO->SetName(util::StringToWString(name).c_str());
         return {};
     }
 
@@ -1028,16 +1041,11 @@ struct Direct3D12VDPRenderer::Impl {
             if (auto result = CreateRootSignature(vdp1.fbramWriteRootSig, rootSigSpec); !result) {
                 return result;
             }
-
-            const D3D12_COMPUTE_PIPELINE_STATE_DESC psoDesc{
-                .pRootSignature = vdp1.fbramWriteRootSig.GetPointer(),
-                .CS = ToShaderBytecode(vdp1.fbramWriteShader),
-            };
-            if (HRESULT hr = vdp1.fbramWritePSO.CreateCompute(device, psoDesc); FAILED(hr)) {
-                return util::ErrorMessage{fmt::format(
-                    "Could not build VDP1 framebuffer write pipeline state object, error code {:X}", (uint32)hr)};
+            if (auto result = CreatePSO(vdp1.fbramWritePSO, vdp1.fbramWriteRootSig, vdp1.fbramWriteShader,
+                                        "[Ymir-VDP1] Framebuffer write pipeline state object");
+                !result) {
+                return result;
             }
-            vdp1.fbramWritePSO->SetName(L"[Ymir-VDP1] Framebuffer write pipeline state object");
 
             const D3D12_CPU_DESCRIPTOR_HANDLE srcHandles[] = {
                 vdp1.fbramWritesSRV.cpuHandle,
@@ -1451,17 +1459,11 @@ struct Direct3D12VDPRenderer::Impl {
 
             // Framebuffer erase
             {
-                const D3D12_COMPUTE_PIPELINE_STATE_DESC psoDesc{
-                    .pRootSignature = vdp1.eraseRootSig.GetPointer(),
-                    .CS = ToShaderBytecode(vdp1.eraseShader),
-                };
-                if (HRESULT hr = frameCtx.erasePSO.CreateCompute(device, psoDesc); FAILED(hr)) {
-                    return util::ErrorMessage{
-                        fmt::format("Could not build VDP1 framebuffer erase pipeline state object #{}, error code {:X}",
-                                    i, (uint32)hr)};
+                if (auto result = CreatePSO(frameCtx.erasePSO, vdp1.eraseRootSig, vdp1.eraseShader,
+                                            fmt::format("[Ymir-VDP1] Framebuffer erase pipeline state object #{}", i));
+                    !result) {
+                    return result;
                 }
-                frameCtx.erasePSO->SetName(
-                    fmt::format(L"[Ymir-VDP1] Framebuffer erase pipeline state object #{}", i).c_str());
 
                 const D3D12_CPU_DESCRIPTOR_HANDLE srcHandles[] = {
                     vdp1.fbramUAV.cpuHandle,
@@ -1482,19 +1484,13 @@ struct Direct3D12VDPRenderer::Impl {
             for (size_t shaderIndex = 0; shaderIndex < vdp1.polyDrawShaders.size(); ++shaderIndex) {
                 const std::string variantName = GetVDP1PolyDrawShaderVariantName(shaderIndex);
                 const bool isOIT = IsVDP1PolyDrawShaderOIT(shaderIndex);
-                const D3D12_COMPUTE_PIPELINE_STATE_DESC psoDesc{
-                    .pRootSignature = isOIT ? vdp1.polyDrawOITRootSig.GetPointer() : vdp1.polyDrawRootSig.GetPointer(),
-                    .CS = ToShaderBytecode(vdp1.polyDrawShaders[shaderIndex]),
-                };
-                if (HRESULT hr = frameCtx.polyDrawPSOs[shaderIndex].CreateCompute(device, psoDesc); FAILED(hr)) {
-                    return util::ErrorMessage{fmt::format(
-                        "Could not build VDP1 polygon drawing variant {} pipeline state object #{}, error code {:X}",
-                        variantName, i, (uint32)hr)};
+                D3D12RootSignature &rootSig = isOIT ? vdp1.polyDrawOITRootSig : vdp1.polyDrawRootSig;
+                gpu::ComputeShader &shader = vdp1.polyDrawShaders[shaderIndex];
+                std::string name =
+                    fmt::format("[Ymir-VDP1] Polygon drawing variant {} pipeline state object #{}", variantName, i);
+                if (auto result = CreatePSO(frameCtx.polyDrawPSOs[shaderIndex], rootSig, shader, name); !result) {
+                    return result;
                 }
-                frameCtx.polyDrawPSOs[shaderIndex]->SetName(
-                    fmt::format(L"[Ymir-VDP1] Polygon drawing variant {} pipeline state object #{}",
-                                util::StringToWString(variantName), i)
-                        .c_str());
             }
 
             // Polygon drawing descriptors (Copy and Shift variants)
@@ -1559,21 +1555,13 @@ struct Direct3D12VDPRenderer::Impl {
             for (size_t shaderIndex = 0; shaderIndex < vdp1.outputMergerShaders.size(); ++shaderIndex) {
                 const std::string variantName = GetVDP1OutputMergerShaderVariantName(shaderIndex);
                 const bool isOIT = IsVDP1OutputMergerShaderOIT(shaderIndex);
-                ID3D12RootSignature *const rootSig =
-                    isOIT ? vdp1.outputMergerOITRootSig.GetPointer() : vdp1.outputMergerRootSig.GetPointer();
-                const D3D12_COMPUTE_PIPELINE_STATE_DESC psoDesc{
-                    .pRootSignature = rootSig,
-                    .CS = ToShaderBytecode(vdp1.outputMergerShaders[shaderIndex]),
-                };
-                if (HRESULT hr = frameCtx.outputMergerPSOs[shaderIndex].CreateCompute(device, psoDesc); FAILED(hr)) {
-                    return util::ErrorMessage{fmt::format(
-                        "Could not build VDP1 output merger variant {} pipeline state object #{}, error code {:X}",
-                        variantName, i, (uint32)hr)};
+                D3D12RootSignature &rootSig = isOIT ? vdp1.outputMergerOITRootSig : vdp1.outputMergerRootSig;
+                gpu::ComputeShader &shader = vdp1.outputMergerShaders[shaderIndex];
+                std::string name =
+                    fmt::format("[Ymir-VDP1] Output merger variant {} pipeline state object #{}", variantName, i);
+                if (auto result = CreatePSO(frameCtx.outputMergerPSOs[shaderIndex], rootSig, shader, name); !result) {
+                    return result;
                 }
-                frameCtx.outputMergerPSOs[shaderIndex]->SetName(
-                    fmt::format(L"[Ymir-VDP1] Output merger variant {} pipeline state object #{}",
-                                util::StringToWString(variantName), i)
-                        .c_str());
             }
             {
                 const D3D12_CPU_DESCRIPTOR_HANDLE srcHandles[] = {
@@ -2221,17 +2209,12 @@ struct Direct3D12VDPRenderer::Impl {
 
             // Sprite layer rendering
             {
-                const D3D12_COMPUTE_PIPELINE_STATE_DESC psoDesc{
-                    .pRootSignature = vdp2.drawSpriteRootSig.GetPointer(),
-                    .CS = ToShaderBytecode(vdp2.drawSpriteShader),
-                };
-                if (HRESULT hr = frameCtx.drawSpritePSO.CreateCompute(device, psoDesc); FAILED(hr)) {
-                    return util::ErrorMessage{fmt::format(
-                        "Could not build VDP2 sprite layer rendering pipeline state object #{}, error code {:X}", i,
-                        (uint32)hr)};
+                if (auto result =
+                        CreatePSO(frameCtx.drawSpritePSO, vdp2.drawSpriteRootSig, vdp2.drawSpriteShader,
+                                  fmt::format("[Ymir-VDP2] Sprite layer rendering pipeline state object #{}", i));
+                    !result) {
+                    return result;
                 }
-                frameCtx.drawSpritePSO->SetName(
-                    fmt::format(L"[Ymir-VDP2] Sprite layer rendering pipeline state object #{}", i).c_str());
 
                 const D3D12_CPU_DESCRIPTOR_HANDLE srcHandles[] = {
                     frameCtx.layerRenderParamsSRV.cpuHandle, vdp2.vramSRV.cpuHandle,  frameCtx.cramColorSRV.cpuHandle,
@@ -2252,17 +2235,11 @@ struct Direct3D12VDPRenderer::Impl {
 
             // Layer rendering
             {
-                const D3D12_COMPUTE_PIPELINE_STATE_DESC psoDesc{
-                    .pRootSignature = vdp2.drawBGsRootSig.GetPointer(),
-                    .CS = ToShaderBytecode(vdp2.drawBGsShader),
-                };
-                if (HRESULT hr = frameCtx.drawBGsPSO.CreateCompute(device, psoDesc); FAILED(hr)) {
-                    return util::ErrorMessage{
-                        fmt::format("Could not build VDP2 layer rendering pipeline state object #{}, error code {:X}",
-                                    i, (uint32)hr)};
+                if (auto result = CreatePSO(frameCtx.drawBGsPSO, vdp2.drawBGsRootSig, vdp2.drawBGsShader,
+                                            fmt::format("[Ymir-VDP2] Layer rendering pipeline state object #{}", i));
+                    !result) {
+                    return result;
                 }
-                frameCtx.drawBGsPSO->SetName(
-                    fmt::format(L"[Ymir-VDP2] Layer rendering pipeline state object #{}", i).c_str());
 
                 const D3D12_CPU_DESCRIPTOR_HANDLE srcHandles[] = {
                     frameCtx.layerRenderParamsSRV.cpuHandle, vdp2.vramSRV.cpuHandle,
@@ -2285,16 +2262,11 @@ struct Direct3D12VDPRenderer::Impl {
 
             // Layer compositing
             {
-                const D3D12_COMPUTE_PIPELINE_STATE_DESC psoDesc{
-                    .pRootSignature = vdp2.composeRootSig.GetPointer(),
-                    .CS = ToShaderBytecode(vdp2.composeShader),
-                };
-                if (HRESULT hr = frameCtx.composePSO.CreateCompute(device, psoDesc); FAILED(hr)) {
-                    return util::ErrorMessage{
-                        fmt::format("Could not build VDP2 layer compositing pipeline state object #{}, error code {:X}",
-                                    i, (uint32)hr)};
+                if (auto result = CreatePSO(frameCtx.composePSO, vdp2.composeRootSig, vdp2.composeShader,
+                                            fmt::format("[Ymir-VDP2] Layer compositing pipeline state object #{}", i));
+                    !result) {
+                    return result;
                 }
-                frameCtx.composePSO->SetName(L"[Ymir-VDP2] Layer compositing pipeline state object");
 
                 const D3D12_CPU_DESCRIPTOR_HANDLE srcHandles[] = {
                     frameCtx.composeParamsSRV.cpuHandle, frameCtx.layerOutSRV.cpuHandle,

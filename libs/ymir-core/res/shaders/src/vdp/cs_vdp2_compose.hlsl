@@ -12,7 +12,7 @@ cbuffer CommonRenderParams : register(b0) {
 
 StructuredBuffer<ComposeParams> g_composeParams : register(t1);
 Texture2DArray<uint4> g_layerIn : register(t2);
-Buffer<uint> g_lnclBackIn : register(t3);
+Buffer<uint4> g_lnclBackIn : register(t3);
 Texture2DArray<uint4> g_rbgLineColorIn : register(t4);
 Texture2DArray<uint> g_spriteAttrsIn : register(t5);
 Texture2D<uint> g_colorCalcWindowIn : register(t6);
@@ -186,19 +186,11 @@ bool IsLineColorEnabled(uint layer, uint2 pos) {
     return BitTest(g_composeParams[0].lineColorEnable, layer);
 }
 
-uint3 Color888(uint val32) {
-    return uint3(
-        BitExtract(val32, 0u, 8u),
-        BitExtract(val32, 8u, 8u),
-        BitExtract(val32, 16u, 8u)
-    );
-}
-
 uint3 GetLineColor(uint layer, uint2 pos) {
     if (layer == kLayerRBG0 || (layer == kLayerNBG0_RBG1 && IsBGLayerEnabled(kBGLayerRBG1))) {
         return g_rbgLineColorIn[uint3(GetLoResInputX(pos.x), GetLoResInputY(pos.y), layer - kLayerRBG0)].rgb;
     }
-    return Color888(g_lnclBackIn[GetLoResInputY(pos.y)]);
+    return g_lnclBackIn[GetLoResInputY(pos.y)].rgb;
 }
 
 int GetColorCalcRatio(uint layer, uint2 pos) {
@@ -243,9 +235,9 @@ uint4 GetLayerOutput(uint layer, uint2 pos) {
         case kLayerNBG3:
             return g_layerIn[uint3(pos.xy, GetBGLayerIndex(layer))];
         case kLayerBack:
-            return uint4(Color888(g_lnclBackIn[GetLoResInputY(pos.y) + kMaxResV]), 0); // the attribute byte doesn't matter
+            return g_lnclBackIn[GetLoResInputY(pos.y) + kMaxResV];
         case kLayerLine:
-            return uint4(Color888(g_lnclBackIn[GetLoResInputY(pos.y)]), 0); // the attribute byte doesn't matter
+            return g_lnclBackIn[GetLoResInputY(pos.y)];
         default:
             return kTransparentPixel; // should never happpen
     }
@@ -275,7 +267,7 @@ uint3 Compose(uint2 basePos) {
         const bool borderColorMode = BitTest(g_commonParams.displayParams, 1);
         if (borderColorMode) {
             // Use back screen color
-            return Color888(g_lnclBackIn[GetLoResInputY(pos.y) + kMaxResV]);
+            return g_lnclBackIn[GetLoResInputY(pos.y) + kMaxResV].rgb;
         }
         return uint3(0, 0, 0);
     }

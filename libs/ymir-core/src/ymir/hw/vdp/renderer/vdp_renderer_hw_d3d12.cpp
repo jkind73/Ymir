@@ -1882,13 +1882,12 @@ struct Direct3D12VDPRenderer::Impl {
             }
 
             // LNCL/BACK screen buffer
-            // TODO: convert to PrimitiveBuffer
-            if (auto result = CreateStructuredBuffer<ColorR8G8B8A8>(
-                    frameCtx.lnclBackBuffer, kMaxResV * 2u,
-                    {
-                        .srv = &frameCtx.lnclBackSRV,
-                        .name = fmt::format("[Ymir-VDP2] LNCL/BACK screen buffer #{}", i),
-                    });
+            if (auto result =
+                    CreatePrimitiveBuffer(frameCtx.lnclBackBuffer, DXGI_FORMAT_R8G8B8A8_UINT, kMaxResV * 2u,
+                                          {
+                                              .srv = &frameCtx.lnclBackSRV,
+                                              .name = fmt::format("[Ymir-VDP2] LNCL/BACK screen buffer #{}", i),
+                                          });
                 !result) {
                 return result;
             }

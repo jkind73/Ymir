@@ -147,6 +147,14 @@ public:
         return true;
     }
 
+    D3D12_CPU_DESCRIPTOR_HANDLE GetCPUHandle(UINT index = 0) const {
+        return m_descs.GetCPUHandle(index);
+    }
+
+    D3D12_GPU_DESCRIPTOR_HANDLE GetGPUHandle(UINT index = 0) const {
+        return m_descs.GetGPUHandle(index);
+    }
+
 private:
     std::array<const DescriptorRange *, kMaxSources> m_srcs{};
     std::size_t m_count = 0;
@@ -309,7 +317,6 @@ struct Direct3D12VDPRenderer::Impl {
         //   - Copy: Replace and Half-Luminance modes
         //   - Right shift: Shadow mode
         //   - OIT: Half-Transparency mode
-        // TODO: OIT might need a dedicated root signature
 
         /// @brief Compute shaders for merging polygon outputs.
         std::array<gpu::ComputeShader, 2 * 3> outputMergerShaders;
@@ -2163,8 +2170,8 @@ struct Direct3D12VDPRenderer::Impl {
                 .right = static_cast<LONG>(kFrameSize * (enhancements.deinterlace ? 4 : 3)),
                 .bottom = 1,
             };
-            cmdList->ClearUnorderedAccessViewUint(vdp1.fbramWriteDescs.Descriptors().GetGPUHandle(1),
-                                                  vdp1.fbramUAV.cpuHandle, dstResource, kClearValue, 1, &rect);
+            cmdList->ClearUnorderedAccessViewUint(vdp1.fbramWriteDescs.GetGPUHandle(1), vdp1.fbramUAV.cpuHandle,
+                                                  dstResource, kClearValue, 1, &rect);
         }
 
         // No longer dirty
@@ -2240,7 +2247,7 @@ struct Direct3D12VDPRenderer::Impl {
         cmdList->SetComputeRoot32BitConstants(0, sizeof(vdp1.cpuCommonRenderParams) / sizeof(uint32),
                                               &vdp1.cpuCommonRenderParams, 0);
         cmdList->SetComputeRoot32BitConstants(0, 1, &writeCount, sizeof(vdp1.cpuCommonRenderParams) / sizeof(uint32));
-        cmdList->SetComputeRootDescriptorTable(1, vdp1.fbramWriteDescs.Descriptors().gpuHandle);
+        cmdList->SetComputeRootDescriptorTable(1, vdp1.fbramWriteDescs.GetGPUHandle());
         cmdList->Dispatch((writeCount + 63) / 64, 1, 1);
 
         // Insert UAV barrier to ensure the following shaders see these changes
@@ -2307,7 +2314,7 @@ struct Direct3D12VDPRenderer::Impl {
                                               &vdp1.cpuCommonRenderParams, 0);
         cmdList->SetComputeRoot32BitConstants(0, sizeof(vdp1.cpuEraseParams) / sizeof(uint32), &vdp1.cpuEraseParams,
                                               sizeof(vdp1.cpuCommonRenderParams) / sizeof(uint32));
-        cmdList->SetComputeRootDescriptorTable(1, frameCtx.eraseDescs.Descriptors().gpuHandle);
+        cmdList->SetComputeRootDescriptorTable(1, frameCtx.eraseDescs.GetGPUHandle());
         cmdList->Dispatch((width + 63) / 64, (height + 31) / 32, 1);
         // NOTE: works on 32-bit units, so two writes per thread, hence why (width+63)/64 instead of +31/32
 
@@ -2508,7 +2515,7 @@ struct Direct3D12VDPRenderer::Impl {
 
             // Reset atomic counter
             static constexpr UINT kClearValue[4] = {0, 0, 0, 0};
-            cmdList->ClearUnorderedAccessViewUint(frameCtx.polyDrawOITDescs.Descriptors().GetGPUHandle(6),
+            cmdList->ClearUnorderedAccessViewUint(frameCtx.polyDrawOITDescs.GetGPUHandle(6),
                                                   frameCtx.oitCounterUAV.cpuHandle,
                                                   frameCtx.oitCounterBuffer.GetPointer(), kClearValue, 0, nullptr);
 
@@ -2528,7 +2535,7 @@ struct Direct3D12VDPRenderer::Impl {
         cmdList->SetComputeRoot32BitConstants(0, sizeof(vdp1.cpuPolyDrawParams) / sizeof(uint32),
                                               &vdp1.cpuPolyDrawParams,
                                               sizeof(vdp1.cpuCommonRenderParams) / sizeof(uint32));
-        cmdList->SetComputeRootDescriptorTable(1, descs.Descriptors().gpuHandle);
+        cmdList->SetComputeRootDescriptorTable(1, descs.GetGPUHandle());
         cmdList->Dispatch((frameCtx.cpuSpanPrefixSums[frameCtx.cpuSpanCount] + 63) / 64, 1, 1);
 
         // Merge output into FBRAM if needed.
@@ -2563,7 +2570,7 @@ struct Direct3D12VDPRenderer::Impl {
             cmdList->SetComputeRootSignature(rootSig.GetPointer());
             cmdList->SetComputeRoot32BitConstants(0, sizeof(vdp1.cpuCommonRenderParams) / sizeof(uint32),
                                                   &vdp1.cpuCommonRenderParams, 0);
-            cmdList->SetComputeRootDescriptorTable(1, tbl.Descriptors().gpuHandle);
+            cmdList->SetComputeRootDescriptorTable(1, tbl.GetGPUHandle());
             cmdList->Dispatch((mergeW + 7) / 8, (mergeH + 7) / 8, mergeZ);
         }
 
@@ -4241,7 +4248,7 @@ struct Direct3D12VDPRenderer::Impl {
         cmdList->SetComputeRootSignature(vdp2.drawSpriteRootSig.GetPointer());
         cmdList->SetComputeRoot32BitConstants(0, sizeof(vdp2.cpuCommonRenderParams) / sizeof(uint32),
                                               &vdp2.cpuCommonRenderParams, 0);
-        cmdList->SetComputeRootDescriptorTable(1, frameCtx.drawSpriteDescs.Descriptors().gpuHandle);
+        cmdList->SetComputeRootDescriptorTable(1, frameCtx.drawSpriteDescs.GetGPUHandle());
         cmdList->Dispatch((HRes + 31) / 32, numLines, enhancements.transparentMeshes ? 2 : 1);
 
         // ---------------------------------------------------------------------
@@ -4274,7 +4281,7 @@ struct Direct3D12VDPRenderer::Impl {
         cmdList->SetComputeRootSignature(vdp2.drawBGsRootSig.GetPointer());
         cmdList->SetComputeRoot32BitConstants(0, sizeof(vdp2.cpuCommonRenderParams) / sizeof(uint32),
                                               &vdp2.cpuCommonRenderParams, 0);
-        cmdList->SetComputeRootDescriptorTable(1, frameCtx.drawBGsDescs.Descriptors().gpuHandle);
+        cmdList->SetComputeRootDescriptorTable(1, frameCtx.drawBGsDescs.GetGPUHandle());
         cmdList->Dispatch(HRes / 32, numLines, 1);
     }
 
@@ -4321,7 +4328,7 @@ struct Direct3D12VDPRenderer::Impl {
         cmdList->SetComputeRootSignature(vdp2.composeRootSig.GetPointer());
         cmdList->SetComputeRoot32BitConstants(0, sizeof(vdp2.cpuCommonRenderParams) / sizeof(uint32),
                                               &vdp2.cpuCommonRenderParams, 0);
-        cmdList->SetComputeRootDescriptorTable(1, frameCtx.composeDescs.Descriptors().gpuHandle);
+        cmdList->SetComputeRootDescriptorTable(1, frameCtx.composeDescs.GetGPUHandle());
         cmdList->Dispatch((HRes + 31) / 32, numLines, 1);
     }
 

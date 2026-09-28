@@ -18,18 +18,18 @@ namespace ymir::gpu::d3d12 {
 
 /// @brief Descriptor pointers, allocated in a heap.
 struct DescriptorRange {
-    D3D12_CPU_DESCRIPTOR_HANDLE cpuHandle;
-    D3D12_GPU_DESCRIPTOR_HANDLE gpuHandle;
-    UINT baseIndex; // index of first descriptor in heap
-    UINT count;     // number of descriptors allocated in this range
-    UINT descSize;  // size of a descriptor
+    D3D12_CPU_DESCRIPTOR_HANDLE cpuHandle{};
+    D3D12_GPU_DESCRIPTOR_HANDLE gpuHandle{};
+    UINT baseIndex = 0; // index of first descriptor in heap
+    UINT count = 0;     // number of descriptors allocated in this range
+    UINT descSize = 0;  // size of a descriptor
 
     D3D12_CPU_DESCRIPTOR_HANDLE GetCPUHandle(UINT offset) const {
-        return D3D12_CPU_DESCRIPTOR_HANDLE{.ptr = cpuHandle.ptr + offset * descSize};
+        return D3D12_CPU_DESCRIPTOR_HANDLE{.ptr = cpuHandle.ptr + std::min(offset, count) * descSize};
     }
 
     D3D12_GPU_DESCRIPTOR_HANDLE GetGPUHandle(UINT offset) const {
-        return D3D12_GPU_DESCRIPTOR_HANDLE{.ptr = gpuHandle.ptr + offset * descSize};
+        return D3D12_GPU_DESCRIPTOR_HANDLE{.ptr = gpuHandle.ptr + std::min(offset, count) * descSize};
     }
 };
 

@@ -65,6 +65,22 @@ struct BarrierTracker {
         };
     }
 
+    /// @brief Stops tracking a buffer.
+    /// @param[in] resource the buffer resource
+    void DeleteBuffer(ID3D12Resource *resource) {
+        m_currentBufferStates.erase(resource);
+        m_desiredBufferStates.erase(resource);
+        m_uavBufferBarriers.erase(resource);
+    }
+
+    /// @brief Stops tracking a texture.
+    /// @param[in] resource the texture resource
+    void DeleteTexture(ID3D12Resource *resource) {
+        m_currentTextureStates.erase(resource);
+        m_desiredTextureStates.erase(resource);
+        m_uavTextureBarriers.erase(resource);
+    }
+
     /// @brief Registers a buffer transition.
     ///
     /// @param[in] buffer pointer to the buffer resource

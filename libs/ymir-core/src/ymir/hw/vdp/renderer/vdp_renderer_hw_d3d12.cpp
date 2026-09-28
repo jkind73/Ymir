@@ -141,8 +141,6 @@ public:
         }
 
         device->CopyDescriptors(1, &dstDescs.cpuHandle, &total, m_count, srcHandles, srcSizes, heapType);
-
-        // TODO: if m_descs.count != 0, send to deletion queue
         m_descs = dstDescs;
         return true;
     }
@@ -717,7 +715,8 @@ struct Direct3D12VDPRenderer::Impl {
         // ---------------------------------------------------------------------
 
         struct DeleteQueues {
-            std::vector<DescriptorRange> descs;
+            std::vector<DescriptorRange> offlineDescs;
+            std::vector<DescriptorRange> onlineDescs;
             std::vector<D3D12Resource> resources;
         } deleteQueues;
 
@@ -733,6 +732,13 @@ struct Direct3D12VDPRenderer::Impl {
         std::array<FrameContext, count> frames;
         size_t frameIndex = 0;
         UINT64 currFenceValue = 0;
+
+        DescriptorHeapAllocator &offlineHeapAlloc;
+        DescriptorHeapAllocator &onlineHeapAlloc;
+
+        FrameSet(DescriptorHeapAllocator &offlineHeapAlloc, DescriptorHeapAllocator &onlineHeapAlloc)
+            : offlineHeapAlloc(offlineHeapAlloc)
+            , onlineHeapAlloc(onlineHeapAlloc) {}
 
         FrameContext &GetCurrentFrame() {
             return frames[frameIndex];
@@ -760,8 +766,7 @@ struct Direct3D12VDPRenderer::Impl {
             return signalValue;
         }
 
-        util::VoidResult<> MoveToNextFrame(D3D12Fence &fence, D3D12CommandQueue &cmdQueue,
-                                           DescriptorHeapAllocator &heapAlloc) {
+        util::VoidResult<> MoveToNextFrame(D3D12Fence &fence, D3D12CommandQueue &cmdQueue) {
             IncrementFence(fence, cmdQueue);
 
             // Update the frame index
@@ -780,10 +785,14 @@ struct Direct3D12VDPRenderer::Impl {
             nextFrame.Reset();
 
             // Free all resources pending for deletion from the frame
-            for (DescriptorRange &range : nextFrame.deleteQueues.descs) {
-                heapAlloc.Free(range.baseIndex, range.count);
+            for (DescriptorRange &range : nextFrame.deleteQueues.offlineDescs) {
+                offlineHeapAlloc.Free(range.baseIndex, range.count);
             }
-            nextFrame.deleteQueues.descs.clear();
+            for (DescriptorRange &range : nextFrame.deleteQueues.onlineDescs) {
+                onlineHeapAlloc.Free(range.baseIndex, range.count);
+            }
+            nextFrame.deleteQueues.offlineDescs.clear();
+            nextFrame.deleteQueues.onlineDescs.clear();
             nextFrame.deleteQueues.resources.clear(); // automatically invokes Release() on all resources
 
             return {};
@@ -826,7 +835,7 @@ struct Direct3D12VDPRenderer::Impl {
     };
 
     /// @brief Per-frame resources.
-    FrameSet<kNumFrames> frames;
+    FrameSet<kNumFrames> frames{offlineHeapAlloc, resourceHeapAlloc};
 
     /// @brief Command list.
     D3D12GraphicsCommandList cmdList;
@@ -4428,7 +4437,7 @@ struct Direct3D12VDPRenderer::Impl {
 
         // Advance frame
         uploadBuffer.EndFrame(frames.GetNextFenceValue());
-        frames.MoveToNextFrame(computeFence, cmdQueue, resourceHeapAlloc);
+        frames.MoveToNextFrame(computeFence, cmdQueue);
 
         // Setup command list
         FrameContext &nextFrame = frames.GetCurrentFrame();

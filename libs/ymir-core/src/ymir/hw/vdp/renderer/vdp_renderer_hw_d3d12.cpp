@@ -90,6 +90,69 @@ D3D12_SHADER_BYTECODE ToShaderBytecode(const gpu::CompiledShader<stage> &shader)
     };
 }
 
+/// @brief Manages an online copy of offline descriptors.
+class DescriptorTable {
+public:
+    /// @brief Maximum number of handles to manage.
+    /// Adjust as needed to accomodate the largest set of descriptor in use by any one descriptor range.
+    static constexpr std::size_t kMaxSources = 9;
+
+    DescriptorTable() = default;
+    DescriptorTable(const DescriptorTable &) = delete;
+
+    /// @brief Binds to the specified source descriptors.
+    /// @tparam ...TSources the source descriptor types
+    /// @param[in] ...srcs the source descriptors to bind
+    template <std::convertible_to<const DescriptorRange *>... TSources>
+    void Bind(TSources... srcs) {
+        static_assert(sizeof...(TSources) <= kMaxSources, "Too many descriptor sources");
+        m_srcs = {static_cast<const DescriptorRange *>(srcs)...};
+        m_count = sizeof...(TSources);
+    }
+
+    /// @brief Retrieves the online descriptor range.
+    /// @return the online descriptor range
+    const DescriptorRange &Descriptors() const {
+        return m_descs;
+    }
+
+    /// @brief Creates a descriptor range with a copy of the bound source descriptors in the specified heap.
+    /// @param[in] device the device that owns the descriptors
+    /// @param[in] heapAlloc the heap allocator
+    /// @param[in] heapType the heap type
+    /// @return `true` if successful, `false` if allocation failed
+    bool Rebuild(D3D12Device &device, DescriptorHeapAllocator &heapAlloc, D3D12_DESCRIPTOR_HEAP_TYPE heapType) {
+        if (m_count == 0) {
+            return true;
+        }
+
+        D3D12_CPU_DESCRIPTOR_HANDLE srcHandles[kMaxSources];
+        UINT srcSizes[kMaxSources];
+        UINT total = 0;
+        for (size_t i = 0; i < m_count; ++i) {
+            srcHandles[i] = m_srcs[i]->cpuHandle;
+            srcSizes[i] = m_srcs[i]->count;
+            total += srcSizes[i];
+        }
+
+        DescriptorRange dstDescs{};
+        if (!heapAlloc.Allocate(dstDescs, total)) {
+            return false;
+        }
+
+        device->CopyDescriptors(1, &dstDescs.cpuHandle, &total, m_count, srcHandles, srcSizes, heapType);
+
+        // TODO: if m_descs.count != 0, send to deletion queue
+        m_descs = dstDescs;
+        return true;
+    }
+
+private:
+    std::array<const DescriptorRange *, kMaxSources> m_srcs{};
+    std::size_t m_count = 0;
+    DescriptorRange m_descs{};
+};
+
 // ---------------------------------------------------------------------------------------------------------------------
 
 struct Direct3D12VDPRenderer::Impl {
@@ -209,7 +272,7 @@ struct Direct3D12VDPRenderer::Impl {
         /// @brief Root signature for writing to the framebuffer.
         D3D12RootSignature fbramWriteRootSig;
         /// @brief Descriptor range for writing to the framebuffer.
-        DescriptorRange fbramWriteDescs;
+        DescriptorTable fbramWriteDescs;
         /// @brief Pipeline state object for writing to the framebuffer.
         D3D12PipelineState fbramWritePSO;
 
@@ -538,23 +601,23 @@ struct Direct3D12VDPRenderer::Impl {
         DescriptorRange oitCounterUAV;
 
         /// @brief Descriptor range for erasing the framebuffer.
-        DescriptorRange eraseDescs;
+        DescriptorTable eraseDescs;
         /// @brief Pipeline state object for erasing the framebuffer.
         D3D12PipelineState erasePSO;
 
         /// @brief Descriptor range for drawing polygons (Copy and Shift variants).
-        DescriptorRange polyDrawDescs;
+        DescriptorTable polyDrawDescs;
         /// @brief Descriptor range for drawing polygons (OIT variants).
-        DescriptorRange polyDrawOITDescs;
+        DescriptorTable polyDrawOITDescs;
         /// @brief Descriptor range for drawing polygons (MSB variants).
-        DescriptorRange polyDrawMSBDescs;
+        DescriptorTable polyDrawMSBDescs;
         /// @brief Pipeline state objects for drawing polygons.
         std::array<D3D12PipelineState, 2 * 4> polyDrawPSOs;
 
         /// @brief Descriptor range for the output merger (non-OIT variants).
-        DescriptorRange outputMergerDescs;
+        DescriptorTable outputMergerDescs;
         /// @brief Descriptor range for the output merger (OIT variants).
-        DescriptorRange outputMergerOITDescs;
+        DescriptorTable outputMergerOITDescs;
         /// @brief Pipeline state objects for the output merger.
         std::array<D3D12PipelineState, 2 * 3> outputMergerPSOs;
 
@@ -632,17 +695,17 @@ struct Direct3D12VDPRenderer::Impl {
         /// @brief Pipeline state object for drawing the sprite layer.
         D3D12PipelineState drawSpritePSO;
         /// @brief Descriptor range for drawing the sprite layer.
-        DescriptorRange drawSpriteDescs;
+        DescriptorTable drawSpriteDescs;
 
         /// @brief Pipeline state object for drawing background layers.
         D3D12PipelineState drawBGsPSO;
         /// @brief Descriptor range for drawing background layers.
-        DescriptorRange drawBGsDescs;
+        DescriptorTable drawBGsDescs;
 
         /// @brief Pipeline state object for compositing layers.
         D3D12PipelineState composePSO;
         /// @brief Descriptor range for compositing layers.
-        DescriptorRange composeDescs;
+        DescriptorTable composeDescs;
 
         void Reset() {
             cmdAlloc->Reset();
@@ -1289,19 +1352,10 @@ struct Direct3D12VDPRenderer::Impl {
                 return result;
             }
 
-            const D3D12_CPU_DESCRIPTOR_HANDLE srcHandles[] = {
-                vdp1.fbramWritesSRV.cpuHandle,
-                vdp1.fbramUAV.cpuHandle,
-            };
-            std::array<UINT, std::size(srcHandles)> srcSizes{};
-            srcSizes.fill(1);
-
-            if (!resourceHeapAlloc.Allocate(vdp1.fbramWriteDescs, std::size(srcHandles))) {
+            vdp1.fbramWriteDescs.Bind(&vdp1.fbramWritesSRV, &vdp1.fbramUAV);
+            if (!vdp1.fbramWriteDescs.Rebuild(device, resourceHeapAlloc, resourceHeap.GetHeapType())) {
                 return util::ErrorMessage{"Could not allocate VDP1 framebuffer write descriptors"};
             }
-
-            device->CopyDescriptors(1, &vdp1.fbramWriteDescs.cpuHandle, &vdp1.fbramWriteDescs.count,
-                                    std::size(srcHandles), srcHandles, srcSizes.data(), resourceHeap.GetHeapType());
         }
 
         // Framebuffer erase
@@ -1507,26 +1561,14 @@ struct Direct3D12VDPRenderer::Impl {
                                             D3D12_BARRIER_ACCESS_UNORDERED_ACCESS);
 
             // Framebuffer erase
-            {
-                if (auto result = CreatePSO(frameCtx.erasePSO, vdp1.eraseRootSig, vdp1.eraseShader,
-                                            fmt::format("[Ymir-VDP1] Framebuffer erase pipeline state object #{}", i));
-                    !result) {
-                    return result;
-                }
-
-                const D3D12_CPU_DESCRIPTOR_HANDLE srcHandles[] = {
-                    vdp1.fbramUAV.cpuHandle,
-                };
-                std::array<UINT, std::size(srcHandles)> srcSizes{};
-                srcSizes.fill(1);
-
-                if (!resourceHeapAlloc.Allocate(frameCtx.eraseDescs, std::size(srcHandles))) {
-                    return util::ErrorMessage{
-                        fmt::format("Could not allocate VDP1 framebuffer erase descriptors #{}", i)};
-                }
-
-                device->CopyDescriptors(1, &frameCtx.eraseDescs.cpuHandle, &frameCtx.eraseDescs.count,
-                                        std::size(srcHandles), srcHandles, srcSizes.data(), resourceHeap.GetHeapType());
+            if (auto result = CreatePSO(frameCtx.erasePSO, vdp1.eraseRootSig, vdp1.eraseShader,
+                                        fmt::format("[Ymir-VDP1] Framebuffer erase pipeline state object #{}", i));
+                !result) {
+                return result;
+            }
+            frameCtx.eraseDescs.Bind(&vdp1.fbramUAV);
+            if (!frameCtx.eraseDescs.Rebuild(device, resourceHeapAlloc, resourceHeap.GetHeapType())) {
+                return util::ErrorMessage{fmt::format("Could not allocate VDP1 framebuffer erase descriptors #{}", i)};
             }
 
             // Polygon drawing pipeline state objects
@@ -1543,61 +1585,27 @@ struct Direct3D12VDPRenderer::Impl {
             }
 
             // Polygon drawing descriptors (Copy and Shift variants)
-            {
-                const D3D12_CPU_DESCRIPTOR_HANDLE srcHandles[] = {
-                    frameCtx.spanParamsSRV.cpuHandle,        frameCtx.spanPrefixSumsSRV.cpuHandle,
-                    frameCtx.cmdParamsSRV.cpuHandle,         vdp1.vramSRV.cpuHandle,
-                    frameCtx.internalSpriteOutUAV.cpuHandle,
-                };
-                std::array<UINT, std::size(srcHandles)> srcSizes{};
-                srcSizes.fill(1);
-
-                if (!resourceHeapAlloc.Allocate(frameCtx.polyDrawDescs, std::size(srcHandles))) {
-                    return util::ErrorMessage{
-                        fmt::format("Could not allocate VDP1 polygon drawing descriptors #{}", i)};
-                }
-
-                device->CopyDescriptors(1, &frameCtx.polyDrawDescs.cpuHandle, &frameCtx.polyDrawDescs.count,
-                                        std::size(srcHandles), srcHandles, srcSizes.data(), resourceHeap.GetHeapType());
+            frameCtx.polyDrawDescs.Bind(&frameCtx.spanParamsSRV, &frameCtx.spanPrefixSumsSRV, &frameCtx.cmdParamsSRV,
+                                        &vdp1.vramSRV, &frameCtx.internalSpriteOutUAV);
+            if (!frameCtx.polyDrawDescs.Rebuild(device, resourceHeapAlloc, resourceHeap.GetHeapType())) {
+                return util::ErrorMessage{fmt::format("Could not allocate VDP1 polygon drawing descriptors #{}", i)};
             }
 
             // Polygon drawing descriptors (OIT variant only)
-            {
-                const D3D12_CPU_DESCRIPTOR_HANDLE srcHandles[] = {
-                    frameCtx.spanParamsSRV.cpuHandle,   frameCtx.spanPrefixSumsSRV.cpuHandle,
-                    frameCtx.cmdParamsSRV.cpuHandle,    vdp1.vramSRV.cpuHandle,
-                    frameCtx.oitListHeadsUAV.cpuHandle, frameCtx.oitFragmentsUAV.cpuHandle,
-                    frameCtx.oitCounterUAV.cpuHandle,
-                };
-                std::array<UINT, std::size(srcHandles)> srcSizes{};
-                srcSizes.fill(1);
-
-                if (!resourceHeapAlloc.Allocate(frameCtx.polyDrawOITDescs, std::size(srcHandles))) {
-                    return util::ErrorMessage{
-                        fmt::format("Could not allocate VDP1 polygon drawing OIT descriptors #{}", i)};
-                }
-
-                device->CopyDescriptors(1, &frameCtx.polyDrawOITDescs.cpuHandle, &frameCtx.polyDrawOITDescs.count,
-                                        std::size(srcHandles), srcHandles, srcSizes.data(), resourceHeap.GetHeapType());
+            frameCtx.polyDrawOITDescs.Bind(&frameCtx.spanParamsSRV, &frameCtx.spanPrefixSumsSRV, &frameCtx.cmdParamsSRV,
+                                           &vdp1.vramSRV, &frameCtx.oitListHeadsUAV, &frameCtx.oitFragmentsUAV,
+                                           &frameCtx.oitCounterUAV);
+            if (!frameCtx.polyDrawOITDescs.Rebuild(device, resourceHeapAlloc, resourceHeap.GetHeapType())) {
+                return util::ErrorMessage{
+                    fmt::format("Could not allocate VDP1 polygon drawing OIT descriptors #{}", i)};
             }
 
             // Polygon drawing descriptors (MSB variant only)
-            {
-                const D3D12_CPU_DESCRIPTOR_HANDLE srcHandles[] = {
-                    frameCtx.spanParamsSRV.cpuHandle, frameCtx.spanPrefixSumsSRV.cpuHandle,
-                    frameCtx.cmdParamsSRV.cpuHandle,  vdp1.vramSRV.cpuHandle,
-                    vdp1.fbramUAV.cpuHandle,
-                };
-                std::array<UINT, std::size(srcHandles)> srcSizes{};
-                srcSizes.fill(1);
-
-                if (!resourceHeapAlloc.Allocate(frameCtx.polyDrawMSBDescs, std::size(srcHandles))) {
-                    return util::ErrorMessage{
-                        fmt::format("Could not allocate VDP1 polygon drawing MSB descriptors #{}", i)};
-                }
-
-                device->CopyDescriptors(1, &frameCtx.polyDrawMSBDescs.cpuHandle, &frameCtx.polyDrawMSBDescs.count,
-                                        std::size(srcHandles), srcHandles, srcSizes.data(), resourceHeap.GetHeapType());
+            frameCtx.polyDrawMSBDescs.Bind(&frameCtx.spanParamsSRV, &frameCtx.spanPrefixSumsSRV, &frameCtx.cmdParamsSRV,
+                                           &vdp1.vramSRV, &vdp1.fbramUAV);
+            if (!frameCtx.polyDrawMSBDescs.Rebuild(device, resourceHeapAlloc, resourceHeap.GetHeapType())) {
+                return util::ErrorMessage{
+                    fmt::format("Could not allocate VDP1 polygon drawing MSB descriptors #{}", i)};
             }
 
             // Output merger
@@ -1612,38 +1620,13 @@ struct Direct3D12VDPRenderer::Impl {
                     return result;
                 }
             }
-            {
-                const D3D12_CPU_DESCRIPTOR_HANDLE srcHandles[] = {
-                    vdp1.fbramUAV.cpuHandle,
-                    frameCtx.internalSpriteOutUAV.cpuHandle,
-                };
-                std::array<UINT, std::size(srcHandles)> srcSizes{};
-                srcSizes.fill(1);
-
-                if (!resourceHeapAlloc.Allocate(frameCtx.outputMergerDescs, std::size(srcHandles))) {
-                    return util::ErrorMessage{fmt::format("Could not allocate VDP1 output merger descriptors #{}", i)};
-                }
-
-                device->CopyDescriptors(1, &frameCtx.outputMergerDescs.cpuHandle, &frameCtx.outputMergerDescs.count,
-                                        std::size(srcHandles), srcHandles, srcSizes.data(), resourceHeap.GetHeapType());
+            frameCtx.outputMergerDescs.Bind(&vdp1.fbramUAV, &frameCtx.internalSpriteOutUAV);
+            if (!frameCtx.outputMergerDescs.Rebuild(device, resourceHeapAlloc, resourceHeap.GetHeapType())) {
+                return util::ErrorMessage{fmt::format("Could not allocate VDP1 output merger descriptors #{}", i)};
             }
-            {
-                const D3D12_CPU_DESCRIPTOR_HANDLE srcHandles[] = {
-                    frameCtx.oitFragmentsSRV.cpuHandle,
-                    vdp1.fbramUAV.cpuHandle,
-                    frameCtx.oitListHeadsUAV.cpuHandle,
-                };
-                std::array<UINT, std::size(srcHandles)> srcSizes{};
-                srcSizes.fill(1);
-
-                if (!resourceHeapAlloc.Allocate(frameCtx.outputMergerOITDescs, std::size(srcHandles))) {
-                    return util::ErrorMessage{
-                        fmt::format("Could not allocate VDP1 output merger OIT descriptors #{}", i)};
-                }
-
-                device->CopyDescriptors(1, &frameCtx.outputMergerOITDescs.cpuHandle,
-                                        &frameCtx.outputMergerOITDescs.count, std::size(srcHandles), srcHandles,
-                                        srcSizes.data(), resourceHeap.GetHeapType());
+            frameCtx.outputMergerOITDescs.Bind(&frameCtx.oitFragmentsSRV, &vdp1.fbramUAV, &frameCtx.oitListHeadsUAV);
+            if (!frameCtx.outputMergerOITDescs.Rebuild(device, resourceHeapAlloc, resourceHeap.GetHeapType())) {
+                return util::ErrorMessage{fmt::format("Could not allocate VDP1 output merger OIT descriptors #{}", i)};
             }
         }
 
@@ -1896,83 +1879,45 @@ struct Direct3D12VDPRenderer::Impl {
                                             D3D12_BARRIER_SYNC_COMPUTE_SHADING, D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
 
             // Sprite layer rendering
-            {
-                if (auto result =
-                        CreatePSO(frameCtx.drawSpritePSO, vdp2.drawSpriteRootSig, vdp2.drawSpriteShader,
-                                  fmt::format("[Ymir-VDP2] Sprite layer rendering pipeline state object #{}", i));
-                    !result) {
-                    return result;
-                }
-
-                const D3D12_CPU_DESCRIPTOR_HANDLE srcHandles[] = {
-                    frameCtx.layerRenderParamsSRV.cpuHandle, vdp2.vramSRV.cpuHandle,  frameCtx.cramColorSRV.cpuHandle,
-                    frameCtx.rotParamBasesSRV.cpuHandle,     vdp1.fbramSRV.cpuHandle, frameCtx.layerOutUAV.cpuHandle,
-                    frameCtx.spriteAttrsUAV.cpuHandle,
-                };
-                std::array<UINT, std::size(srcHandles)> srcSizes{};
-                srcSizes.fill(1);
-
-                if (!resourceHeapAlloc.Allocate(frameCtx.drawSpriteDescs, std::size(srcHandles))) {
-                    return util::ErrorMessage{
-                        fmt::format("Could not allocate VDP2 sprite layer rendering descriptors #{}", i)};
-                }
-
-                device->CopyDescriptors(1, &frameCtx.drawSpriteDescs.cpuHandle, &frameCtx.drawSpriteDescs.count,
-                                        std::size(srcHandles), srcHandles, srcSizes.data(), resourceHeap.GetHeapType());
+            if (auto result = CreatePSO(frameCtx.drawSpritePSO, vdp2.drawSpriteRootSig, vdp2.drawSpriteShader,
+                                        fmt::format("[Ymir-VDP2] Sprite layer rendering pipeline state object #{}", i));
+                !result) {
+                return result;
+            }
+            frameCtx.drawSpriteDescs.Bind(&frameCtx.layerRenderParamsSRV, &vdp2.vramSRV, &frameCtx.cramColorSRV,
+                                          &frameCtx.rotParamBasesSRV, &vdp1.fbramSRV, &frameCtx.layerOutUAV,
+                                          &frameCtx.spriteAttrsUAV);
+            if (!frameCtx.drawSpriteDescs.Rebuild(device, resourceHeapAlloc, resourceHeap.GetHeapType())) {
+                return util::ErrorMessage{
+                    fmt::format("Could not allocate VDP2 sprite layer rendering descriptors #{}", i)};
             }
 
             // Layer rendering
-            {
-                if (auto result =
-                        CreatePSO(frameCtx.drawBGsPSO, vdp2.drawBGsRootSig, vdp2.drawBGsShader,
-                                  fmt::format("[Ymir-VDP2] Background layer rendering pipeline state object #{}", i));
-                    !result) {
-                    return result;
-                }
-
-                const D3D12_CPU_DESCRIPTOR_HANDLE srcHandles[] = {
-                    frameCtx.layerRenderParamsSRV.cpuHandle, vdp2.vramSRV.cpuHandle,
-                    frameCtx.cramColorSRV.cpuHandle,         frameCtx.cramRotCoeffSRV.cpuHandle,
-                    frameCtx.rotParamBasesSRV.cpuHandle,     frameCtx.spriteAttrsSRV.cpuHandle,
-                    frameCtx.layerOutUAV.cpuHandle,          frameCtx.rbgLineColorOutUAV.cpuHandle,
-                    frameCtx.colorCalcWindowUAV.cpuHandle,
-                };
-                std::array<UINT, std::size(srcHandles)> srcSizes{};
-                srcSizes.fill(1);
-
-                if (!resourceHeapAlloc.Allocate(frameCtx.drawBGsDescs, std::size(srcHandles))) {
-                    return util::ErrorMessage{
-                        fmt::format("Could not allocate VDP2 layer rendering descriptors #{}", i)};
-                }
-
-                device->CopyDescriptors(1, &frameCtx.drawBGsDescs.cpuHandle, &frameCtx.drawBGsDescs.count,
-                                        std::size(srcHandles), srcHandles, srcSizes.data(), resourceHeap.GetHeapType());
+            if (auto result =
+                    CreatePSO(frameCtx.drawBGsPSO, vdp2.drawBGsRootSig, vdp2.drawBGsShader,
+                              fmt::format("[Ymir-VDP2] Background layer rendering pipeline state object #{}", i));
+                !result) {
+                return result;
+            }
+            frameCtx.drawBGsDescs.Bind(&frameCtx.layerRenderParamsSRV, &vdp2.vramSRV, &frameCtx.cramColorSRV,
+                                       &frameCtx.cramRotCoeffSRV, &frameCtx.rotParamBasesSRV, &frameCtx.spriteAttrsSRV,
+                                       &frameCtx.layerOutUAV, &frameCtx.rbgLineColorOutUAV,
+                                       &frameCtx.colorCalcWindowUAV);
+            if (!frameCtx.drawBGsDescs.Rebuild(device, resourceHeapAlloc, resourceHeap.GetHeapType())) {
+                return util::ErrorMessage{fmt::format("Could not allocate VDP2 layer rendering descriptors #{}", i)};
             }
 
             // Layer compositing
-            {
-                if (auto result = CreatePSO(frameCtx.composePSO, vdp2.composeRootSig, vdp2.composeShader,
-                                            fmt::format("[Ymir-VDP2] Layer compositing pipeline state object #{}", i));
-                    !result) {
-                    return result;
-                }
-
-                const D3D12_CPU_DESCRIPTOR_HANDLE srcHandles[] = {
-                    frameCtx.composeParamsSRV.cpuHandle, frameCtx.layerOutSRV.cpuHandle,
-                    frameCtx.lnclBackSRV.cpuHandle,      frameCtx.rbgLineColorOutSRV.cpuHandle,
-                    frameCtx.spriteAttrsSRV.cpuHandle,   frameCtx.colorCalcWindowSRV.cpuHandle,
-                    vdp2.compositeOutUAV.cpuHandle,
-                };
-                std::array<UINT, std::size(srcHandles)> srcSizes{};
-                srcSizes.fill(1);
-
-                if (!resourceHeapAlloc.Allocate(frameCtx.composeDescs, std::size(srcHandles))) {
-                    return util::ErrorMessage{
-                        fmt::format("Could not allocate VDP2 layer compositing descriptors #{}", i)};
-                }
-
-                device->CopyDescriptors(1, &frameCtx.composeDescs.cpuHandle, &frameCtx.composeDescs.count,
-                                        std::size(srcHandles), srcHandles, srcSizes.data(), resourceHeap.GetHeapType());
+            if (auto result = CreatePSO(frameCtx.composePSO, vdp2.composeRootSig, vdp2.composeShader,
+                                        fmt::format("[Ymir-VDP2] Layer compositing pipeline state object #{}", i));
+                !result) {
+                return result;
+            }
+            frameCtx.composeDescs.Bind(&frameCtx.composeParamsSRV, &frameCtx.layerOutSRV, &frameCtx.lnclBackSRV,
+                                       &frameCtx.rbgLineColorOutSRV, &frameCtx.spriteAttrsSRV,
+                                       &frameCtx.colorCalcWindowSRV, &vdp2.compositeOutUAV);
+            if (!frameCtx.composeDescs.Rebuild(device, resourceHeapAlloc, resourceHeap.GetHeapType())) {
+                return util::ErrorMessage{fmt::format("Could not allocate VDP2 layer compositing descriptors #{}", i)};
             }
         }
 
@@ -2218,8 +2163,8 @@ struct Direct3D12VDPRenderer::Impl {
                 .right = static_cast<LONG>(kFrameSize * (enhancements.deinterlace ? 4 : 3)),
                 .bottom = 1,
             };
-            cmdList->ClearUnorderedAccessViewUint(vdp1.fbramWriteDescs.GetGPUHandle(1), vdp1.fbramUAV.cpuHandle,
-                                                  dstResource, kClearValue, 1, &rect);
+            cmdList->ClearUnorderedAccessViewUint(vdp1.fbramWriteDescs.Descriptors().GetGPUHandle(1),
+                                                  vdp1.fbramUAV.cpuHandle, dstResource, kClearValue, 1, &rect);
         }
 
         // No longer dirty
@@ -2295,7 +2240,7 @@ struct Direct3D12VDPRenderer::Impl {
         cmdList->SetComputeRoot32BitConstants(0, sizeof(vdp1.cpuCommonRenderParams) / sizeof(uint32),
                                               &vdp1.cpuCommonRenderParams, 0);
         cmdList->SetComputeRoot32BitConstants(0, 1, &writeCount, sizeof(vdp1.cpuCommonRenderParams) / sizeof(uint32));
-        cmdList->SetComputeRootDescriptorTable(1, vdp1.fbramWriteDescs.gpuHandle);
+        cmdList->SetComputeRootDescriptorTable(1, vdp1.fbramWriteDescs.Descriptors().gpuHandle);
         cmdList->Dispatch((writeCount + 63) / 64, 1, 1);
 
         // Insert UAV barrier to ensure the following shaders see these changes
@@ -2362,7 +2307,7 @@ struct Direct3D12VDPRenderer::Impl {
                                               &vdp1.cpuCommonRenderParams, 0);
         cmdList->SetComputeRoot32BitConstants(0, sizeof(vdp1.cpuEraseParams) / sizeof(uint32), &vdp1.cpuEraseParams,
                                               sizeof(vdp1.cpuCommonRenderParams) / sizeof(uint32));
-        cmdList->SetComputeRootDescriptorTable(1, frameCtx.eraseDescs.gpuHandle);
+        cmdList->SetComputeRootDescriptorTable(1, frameCtx.eraseDescs.Descriptors().gpuHandle);
         cmdList->Dispatch((width + 63) / 64, (height + 31) / 32, 1);
         // NOTE: works on 32-bit units, so two writes per thread, hence why (width+63)/64 instead of +31/32
 
@@ -2563,7 +2508,7 @@ struct Direct3D12VDPRenderer::Impl {
 
             // Reset atomic counter
             static constexpr UINT kClearValue[4] = {0, 0, 0, 0};
-            cmdList->ClearUnorderedAccessViewUint(frameCtx.polyDrawOITDescs.GetGPUHandle(6),
+            cmdList->ClearUnorderedAccessViewUint(frameCtx.polyDrawOITDescs.Descriptors().GetGPUHandle(6),
                                                   frameCtx.oitCounterUAV.cpuHandle,
                                                   frameCtx.oitCounterBuffer.GetPointer(), kClearValue, 0, nullptr);
 
@@ -2573,7 +2518,7 @@ struct Direct3D12VDPRenderer::Impl {
 
         // Dispatch polygon drawing shader
         const D3D12RootSignature &rootSig = isOIT ? vdp1.polyDrawOITRootSig : vdp1.polyDrawRootSig;
-        const DescriptorRange &descs = isOIT   ? frameCtx.polyDrawOITDescs
+        const DescriptorTable &descs = isOIT   ? frameCtx.polyDrawOITDescs
                                        : isMSB ? frameCtx.polyDrawMSBDescs
                                                : frameCtx.polyDrawDescs;
         cmdList->SetPipelineState(frameCtx.polyDrawPSOs[vdp1.currPolyDrawShaderIndex].GetPointer());
@@ -2583,7 +2528,7 @@ struct Direct3D12VDPRenderer::Impl {
         cmdList->SetComputeRoot32BitConstants(0, sizeof(vdp1.cpuPolyDrawParams) / sizeof(uint32),
                                               &vdp1.cpuPolyDrawParams,
                                               sizeof(vdp1.cpuCommonRenderParams) / sizeof(uint32));
-        cmdList->SetComputeRootDescriptorTable(1, descs.gpuHandle);
+        cmdList->SetComputeRootDescriptorTable(1, descs.Descriptors().gpuHandle);
         cmdList->Dispatch((frameCtx.cpuSpanPrefixSums[frameCtx.cpuSpanCount] + 63) / 64, 1, 1);
 
         // Merge output into FBRAM if needed.
@@ -2605,7 +2550,7 @@ struct Direct3D12VDPRenderer::Impl {
 
             // Set up parameters
             const D3D12RootSignature &rootSig = isMergerOIT ? vdp1.outputMergerOITRootSig : vdp1.outputMergerRootSig;
-            const DescriptorRange &descs = isMergerOIT ? frameCtx.outputMergerOITDescs : frameCtx.outputMergerDescs;
+            const DescriptorTable &tbl = isMergerOIT ? frameCtx.outputMergerOITDescs : frameCtx.outputMergerDescs;
             const VDP1Regs &regs1 = vdpState.regs1;
             const VDP2Regs &regs2 = vdpState.regs2;
             const uint32 pixelsPerEntry = regs1.pixel8Bits ? 4u : 2u; // each entry is 32 bits
@@ -2618,7 +2563,7 @@ struct Direct3D12VDPRenderer::Impl {
             cmdList->SetComputeRootSignature(rootSig.GetPointer());
             cmdList->SetComputeRoot32BitConstants(0, sizeof(vdp1.cpuCommonRenderParams) / sizeof(uint32),
                                                   &vdp1.cpuCommonRenderParams, 0);
-            cmdList->SetComputeRootDescriptorTable(1, descs.gpuHandle);
+            cmdList->SetComputeRootDescriptorTable(1, tbl.Descriptors().gpuHandle);
             cmdList->Dispatch((mergeW + 7) / 8, (mergeH + 7) / 8, mergeZ);
         }
 
@@ -4296,7 +4241,7 @@ struct Direct3D12VDPRenderer::Impl {
         cmdList->SetComputeRootSignature(vdp2.drawSpriteRootSig.GetPointer());
         cmdList->SetComputeRoot32BitConstants(0, sizeof(vdp2.cpuCommonRenderParams) / sizeof(uint32),
                                               &vdp2.cpuCommonRenderParams, 0);
-        cmdList->SetComputeRootDescriptorTable(1, frameCtx.drawSpriteDescs.gpuHandle);
+        cmdList->SetComputeRootDescriptorTable(1, frameCtx.drawSpriteDescs.Descriptors().gpuHandle);
         cmdList->Dispatch((HRes + 31) / 32, numLines, enhancements.transparentMeshes ? 2 : 1);
 
         // ---------------------------------------------------------------------
@@ -4329,7 +4274,7 @@ struct Direct3D12VDPRenderer::Impl {
         cmdList->SetComputeRootSignature(vdp2.drawBGsRootSig.GetPointer());
         cmdList->SetComputeRoot32BitConstants(0, sizeof(vdp2.cpuCommonRenderParams) / sizeof(uint32),
                                               &vdp2.cpuCommonRenderParams, 0);
-        cmdList->SetComputeRootDescriptorTable(1, frameCtx.drawBGsDescs.gpuHandle);
+        cmdList->SetComputeRootDescriptorTable(1, frameCtx.drawBGsDescs.Descriptors().gpuHandle);
         cmdList->Dispatch(HRes / 32, numLines, 1);
     }
 
@@ -4376,7 +4321,7 @@ struct Direct3D12VDPRenderer::Impl {
         cmdList->SetComputeRootSignature(vdp2.composeRootSig.GetPointer());
         cmdList->SetComputeRoot32BitConstants(0, sizeof(vdp2.cpuCommonRenderParams) / sizeof(uint32),
                                               &vdp2.cpuCommonRenderParams, 0);
-        cmdList->SetComputeRootDescriptorTable(1, frameCtx.composeDescs.gpuHandle);
+        cmdList->SetComputeRootDescriptorTable(1, frameCtx.composeDescs.Descriptors().gpuHandle);
         cmdList->Dispatch((HRes + 31) / 32, numLines, 1);
     }
 

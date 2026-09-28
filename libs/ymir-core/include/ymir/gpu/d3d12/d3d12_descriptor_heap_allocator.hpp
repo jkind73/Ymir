@@ -24,11 +24,11 @@ struct DescriptorRange {
     UINT count;     // number of descriptors allocated in this range
     UINT descSize;  // size of a descriptor
 
-    D3D12_CPU_DESCRIPTOR_HANDLE GetCPUHandle(UINT offset) {
+    D3D12_CPU_DESCRIPTOR_HANDLE GetCPUHandle(UINT offset) const {
         return D3D12_CPU_DESCRIPTOR_HANDLE{.ptr = cpuHandle.ptr + offset * descSize};
     }
 
-    D3D12_GPU_DESCRIPTOR_HANDLE GetGPUHandle(UINT offset) {
+    D3D12_GPU_DESCRIPTOR_HANDLE GetGPUHandle(UINT offset) const {
         return D3D12_GPU_DESCRIPTOR_HANDLE{.ptr = gpuHandle.ptr + offset * descSize};
     }
 };

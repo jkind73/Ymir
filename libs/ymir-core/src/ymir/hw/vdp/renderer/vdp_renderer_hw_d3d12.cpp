@@ -714,6 +714,13 @@ struct Direct3D12VDPRenderer::Impl {
         /// @brief Descriptor range for compositing layers.
         DescriptorTable composeDescs;
 
+        // ---------------------------------------------------------------------
+
+        struct DeleteQueues {
+            std::vector<DescriptorRange> descs;
+            std::vector<D3D12Resource> resources;
+        } deleteQueues;
+
         void Reset() {
             cmdAlloc->Reset();
         }
@@ -753,7 +760,8 @@ struct Direct3D12VDPRenderer::Impl {
             return signalValue;
         }
 
-        util::VoidResult<> MoveToNextFrame(D3D12Fence &fence, D3D12CommandQueue &cmdQueue) {
+        util::VoidResult<> MoveToNextFrame(D3D12Fence &fence, D3D12CommandQueue &cmdQueue,
+                                           DescriptorHeapAllocator &heapAlloc) {
             IncrementFence(fence, cmdQueue);
 
             // Update the frame index
@@ -770,6 +778,13 @@ struct Direct3D12VDPRenderer::Impl {
 
             // Reset frame
             nextFrame.Reset();
+
+            // Free all resources pending for deletion from the frame
+            for (DescriptorRange &range : nextFrame.deleteQueues.descs) {
+                heapAlloc.Free(range.baseIndex, range.count);
+            }
+            nextFrame.deleteQueues.descs.clear();
+            nextFrame.deleteQueues.resources.clear(); // automatically invokes Release() on all resources
 
             return {};
         }
@@ -4413,7 +4428,7 @@ struct Direct3D12VDPRenderer::Impl {
 
         // Advance frame
         uploadBuffer.EndFrame(frames.GetNextFenceValue());
-        frames.MoveToNextFrame(computeFence, cmdQueue);
+        frames.MoveToNextFrame(computeFence, cmdQueue, resourceHeapAlloc);
 
         // Setup command list
         FrameContext &nextFrame = frames.GetCurrentFrame();

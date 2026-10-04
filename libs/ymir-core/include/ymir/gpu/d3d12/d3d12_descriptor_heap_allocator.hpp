@@ -24,6 +24,14 @@ struct DescriptorRange {
     UINT count = 0;     // number of descriptors allocated in this range
     UINT descSize = 0;  // size of a descriptor
 
+    void Reset() {
+        cpuHandle = {};
+        gpuHandle = {};
+        baseIndex = 0;
+        count = 0;
+        descSize = 0;
+    }
+
     D3D12_CPU_DESCRIPTOR_HANDLE GetCPUHandle(UINT offset) const {
         return D3D12_CPU_DESCRIPTOR_HANDLE{.ptr = cpuHandle.ptr + std::min(offset, count) * descSize};
     }

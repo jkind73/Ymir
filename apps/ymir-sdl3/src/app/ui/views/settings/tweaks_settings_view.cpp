@@ -108,6 +108,8 @@ void TweaksSettingsView::Display() {
         fmt::format_to(
             inserter, "  - {}\n",
             checkbox("Use dedicated thread for deinterlaced rendering", swRenderer.threadedDeinterlacer.Get()));
+        fmt::format_to(inserter, "- {}\n",
+                       checkbox("Hardware VDP rendering", settings.video.useHardwareAcceleration.Get()));
 
         // -------------------------------------------------------------------------------------------------------------
         // Audio
@@ -300,7 +302,7 @@ void TweaksSettingsView::DisplayPerformanceOptions() {
         m_context.EnqueueEvent(events::emu::EnableThreadedVDP1(true));
         m_context.EnqueueEvent(events::emu::EnableThreadedVDP2(true));
         m_context.EnqueueEvent(events::emu::EnableThreadedDeinterlacer(true));
-        m_context.EnqueueEvent(events::emu::EnableThreadedSCSP(false));
+        m_context.EnqueueEvent(events::emu::EnableThreadedSCSP(true));
     }
     if (ImGui::BeginItemTooltip()) {
         ImGui::TextUnformatted("Strikes a good balance between compatibility and performance.");
@@ -344,7 +346,11 @@ void TweaksSettingsView::DisplayPerformanceOptions() {
 
     widgets::settings::video::swrenderer::ThreadedVDP(m_context);
 
-    // TODO: hardware renderer options
+    ImGui::PushFont(imguiData->fonts.sansSerif.bold, imguiData->fontSizes.medium);
+    ImGui::SeparatorText("Hardware renderer");
+    ImGui::PopFont();
+
+    widgets::settings::video::UseHardwareAcceleration(m_context);
 
     // -----------------------------------------------------------------------------------------------------------------
 

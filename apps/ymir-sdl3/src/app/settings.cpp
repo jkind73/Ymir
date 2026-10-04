@@ -8,7 +8,6 @@
 #include <ymir/sys/saturn.hpp>
 
 #include <ymir/util/dev_log.hpp>
-#include <ymir/util/inline.hpp>
 
 #include <util/math.hpp>
 
@@ -61,7 +60,7 @@ namespace grp {
 // -------------------------------------------------------------------------------------------------
 // Enum parsers
 
-FORCE_INLINE static void Parse(toml::node_view<toml::node> &node, db::SystemVariant &value) {
+static void Parse(toml::node_view<toml::node> &node, db::SystemVariant &value) {
     value = db::SystemVariant::Saturn;
     if (auto opt = node.value<std::string>()) {
         if (*opt == "Saturn"s) {
@@ -74,7 +73,7 @@ FORCE_INLINE static void Parse(toml::node_view<toml::node> &node, db::SystemVari
     }
 }
 
-FORCE_INLINE static void Parse(toml::node_view<toml::node> &node, core::config::sys::Region &value) {
+static void Parse(toml::node_view<toml::node> &node, core::config::sys::Region &value) {
     value = core::config::sys::Region::Japan;
     if (auto opt = node.value<std::string>()) {
         if (*opt == "Japan"s) {
@@ -97,7 +96,7 @@ FORCE_INLINE static void Parse(toml::node_view<toml::node> &node, core::config::
     }
 }
 
-FORCE_INLINE static void Parse(toml::node_view<toml::node> &node, core::config::sys::VideoStandard &value) {
+static void Parse(toml::node_view<toml::node> &node, core::config::sys::VideoStandard &value) {
     value = core::config::sys::VideoStandard::NTSC;
     if (auto opt = node.value<std::string>()) {
         if (*opt == "NTSC"s) {
@@ -108,7 +107,7 @@ FORCE_INLINE static void Parse(toml::node_view<toml::node> &node, core::config::
     }
 }
 
-FORCE_INLINE static void Parse(toml::node_view<toml::node> &node, core::config::rtc::Mode &value) {
+static void Parse(toml::node_view<toml::node> &node, core::config::rtc::Mode &value) {
     value = core::config::rtc::Mode::Host;
     if (auto opt = node.value<std::string>()) {
         if (*opt == "Host"s) {
@@ -119,7 +118,7 @@ FORCE_INLINE static void Parse(toml::node_view<toml::node> &node, core::config::
     }
 }
 
-FORCE_INLINE static void Parse(toml::node_view<toml::node> &node, core::config::rtc::HardResetStrategy &value) {
+static void Parse(toml::node_view<toml::node> &node, core::config::rtc::HardResetStrategy &value) {
     value = core::config::rtc::HardResetStrategy::Preserve;
     if (auto opt = node.value<std::string>()) {
         if (*opt == "PreserveCurrentTime"s) {
@@ -132,7 +131,7 @@ FORCE_INLINE static void Parse(toml::node_view<toml::node> &node, core::config::
     }
 }
 
-FORCE_INLINE static void Parse(toml::node_view<toml::node> &node, peripheral::PeripheralType &value) {
+static void Parse(toml::node_view<toml::node> &node, peripheral::PeripheralType &value) {
     value = peripheral::PeripheralType::None;
     if (auto opt = node.value<std::string>()) {
         if (*opt == "None"s) {
@@ -155,7 +154,7 @@ FORCE_INLINE static void Parse(toml::node_view<toml::node> &node, peripheral::Pe
     }
 }
 
-FORCE_INLINE static void Parse(toml::node_view<toml::node> &node, core::config::audio::SampleInterpolationMode &value) {
+static void Parse(toml::node_view<toml::node> &node, core::config::audio::SampleInterpolationMode &value) {
     value = core::config::audio::SampleInterpolationMode::NearestNeighbor;
     if (auto opt = node.value<std::string>()) {
         if (*opt == "Nearest"s) {
@@ -166,7 +165,7 @@ FORCE_INLINE static void Parse(toml::node_view<toml::node> &node, core::config::
     }
 }
 
-FORCE_INLINE static void Parse(toml::node_view<toml::node> &node, Settings::Input::Mouse::CaptureMode &value) {
+static void Parse(toml::node_view<toml::node> &node, Settings::Input::Mouse::CaptureMode &value) {
     value = Settings::Input::Mouse::CaptureMode::SystemCursor;
     if (auto opt = node.value<std::string>()) {
         if (*opt == "SystemCursor"s) {
@@ -177,7 +176,7 @@ FORCE_INLINE static void Parse(toml::node_view<toml::node> &node, Settings::Inpu
     }
 }
 
-FORCE_INLINE static void Parse(toml::node_view<toml::node> &node, Settings::GUI::FrameRateOSDPosition &value) {
+static void Parse(toml::node_view<toml::node> &node, Settings::GUI::FrameRateOSDPosition &value) {
     value = Settings::GUI::FrameRateOSDPosition::TopRight;
     if (auto opt = node.value<std::string>()) {
         if (*opt == "TopLeft"s) {
@@ -192,7 +191,7 @@ FORCE_INLINE static void Parse(toml::node_view<toml::node> &node, Settings::GUI:
     }
 }
 
-FORCE_INLINE static void Parse(toml::node_view<toml::node> &node, gfx::Backend &value) {
+static void Parse(toml::node_view<toml::node> &node, gfx::Backend &value) {
     value = gfx::kDefaultBackend;
     if (auto opt = node.value<std::string>()) {
         if (*opt == "Default"s) {
@@ -217,14 +216,14 @@ FORCE_INLINE static void Parse(toml::node_view<toml::node> &node, gfx::Backend &
     }
 }
 
-FORCE_INLINE static void Parse(toml::node_view<toml::node> &node, std::optional<gfx::AdapterID> &value) {
+static void Parse(toml::node_view<toml::node> &node, std::optional<gfx::AdapterID> &value) {
     value = std::nullopt;
     if (auto opt = node.value<std::string>()) {
         value = gfx::AdapterID::TryParse(*opt);
     }
 }
 
-FORCE_INLINE static void Parse(toml::node_view<toml::node> &node, Settings::Video::DisplayRotation &value) {
+static void Parse(toml::node_view<toml::node> &node, Settings::Video::DisplayRotation &value) {
     value = Settings::Video::DisplayRotation::Normal;
     if (auto opt = node.value<std::string>()) {
         if (*opt == "Normal"s) {
@@ -307,7 +306,7 @@ static const std::unordered_map<std::string_view, SDL_PixelFormat> kPixelFormats
     {"MJPG", SDL_PIXELFORMAT_MJPG},
 };
 
-FORCE_INLINE static void Parse(toml::node_view<toml::node> &node, SDL_PixelFormat &value) {
+static void Parse(toml::node_view<toml::node> &node, SDL_PixelFormat &value) {
     value = SDL_PIXELFORMAT_UNKNOWN;
     if (auto opt = node.value<std::string>()) {
         if (kPixelFormats.contains(*opt)) {
@@ -316,7 +315,7 @@ FORCE_INLINE static void Parse(toml::node_view<toml::node> &node, SDL_PixelForma
     }
 }
 
-FORCE_INLINE static void Parse(toml::node_view<toml::node> &node, Settings::Audio::MidiPort::Type &value) {
+static void Parse(toml::node_view<toml::node> &node, Settings::Audio::MidiPort::Type &value) {
     value = Settings::Audio::MidiPort::Type::None;
     if (auto opt = node.value<std::string>()) {
         if (*opt == "None"s) {
@@ -329,7 +328,7 @@ FORCE_INLINE static void Parse(toml::node_view<toml::node> &node, Settings::Audi
     }
 }
 
-FORCE_INLINE static void Parse(toml::node_view<toml::node> &node, Settings::Cartridge::Type &value) {
+static void Parse(toml::node_view<toml::node> &node, Settings::Cartridge::Type &value) {
     value = Settings::Cartridge::Type::None;
     if (auto opt = node.value<std::string>()) {
         if (*opt == "None"s) {
@@ -344,7 +343,7 @@ FORCE_INLINE static void Parse(toml::node_view<toml::node> &node, Settings::Cart
     }
 }
 
-FORCE_INLINE static void Parse(toml::node_view<toml::node> &node, Settings::Cartridge::BackupRAM::Capacity &value) {
+static void Parse(toml::node_view<toml::node> &node, Settings::Cartridge::BackupRAM::Capacity &value) {
     value = Settings::Cartridge::BackupRAM::Capacity::_32Mbit;
     if (auto opt = node.value<std::string>()) {
         if (*opt == "32Mbit"s) {
@@ -359,7 +358,7 @@ FORCE_INLINE static void Parse(toml::node_view<toml::node> &node, Settings::Cart
     }
 }
 
-FORCE_INLINE static void Parse(toml::node_view<toml::node> &node, Settings::Cartridge::DRAM::Capacity &value) {
+static void Parse(toml::node_view<toml::node> &node, Settings::Cartridge::DRAM::Capacity &value) {
     value = Settings::Cartridge::DRAM::Capacity::_32Mbit;
     if (auto opt = node.value<std::string>()) {
         if (*opt == "48Mbit"s) {
@@ -375,7 +374,7 @@ FORCE_INLINE static void Parse(toml::node_view<toml::node> &node, Settings::Cart
 // -------------------------------------------------------------------------------------------------
 // Enum-to-string converters
 
-FORCE_INLINE static const char *ToTOML(const db::SystemVariant value) {
+static const char *ToTOML(const db::SystemVariant value) {
     switch (value) {
     default: [[fallthrough]];
     case db::SystemVariant::Saturn: return "Saturn";
@@ -384,7 +383,7 @@ FORCE_INLINE static const char *ToTOML(const db::SystemVariant value) {
     }
 }
 
-FORCE_INLINE static const char *ToTOML(const core::config::sys::Region value) {
+static const char *ToTOML(const core::config::sys::Region value) {
     switch (value) {
     default: [[fallthrough]];
     case core::config::sys::Region::Japan: return "Japan";
@@ -399,7 +398,7 @@ FORCE_INLINE static const char *ToTOML(const core::config::sys::Region value) {
     }
 }
 
-FORCE_INLINE static const char *ToTOML(const core::config::sys::VideoStandard value) {
+static const char *ToTOML(const core::config::sys::VideoStandard value) {
     switch (value) {
     default: [[fallthrough]];
     case core::config::sys::VideoStandard::NTSC: return "NTSC";
@@ -407,7 +406,7 @@ FORCE_INLINE static const char *ToTOML(const core::config::sys::VideoStandard va
     }
 }
 
-FORCE_INLINE static const char *ToTOML(const core::config::rtc::Mode value) {
+static const char *ToTOML(const core::config::rtc::Mode value) {
     switch (value) {
     default: [[fallthrough]];
     case core::config::rtc::Mode::Host: return "Host";
@@ -415,7 +414,7 @@ FORCE_INLINE static const char *ToTOML(const core::config::rtc::Mode value) {
     }
 }
 
-FORCE_INLINE static const char *ToTOML(const core::config::rtc::HardResetStrategy value) {
+static const char *ToTOML(const core::config::rtc::HardResetStrategy value) {
     switch (value) {
     default: [[fallthrough]];
     case core::config::rtc::HardResetStrategy::Preserve: return "Preserve";
@@ -424,7 +423,7 @@ FORCE_INLINE static const char *ToTOML(const core::config::rtc::HardResetStrateg
     }
 }
 
-FORCE_INLINE static const char *ToTOML(const peripheral::PeripheralType value) {
+static const char *ToTOML(const peripheral::PeripheralType value) {
     switch (value) {
     default: [[fallthrough]];
     case peripheral::PeripheralType::None: return "None";
@@ -437,7 +436,7 @@ FORCE_INLINE static const char *ToTOML(const peripheral::PeripheralType value) {
     }
 }
 
-FORCE_INLINE static const char *ToTOML(const core::config::audio::SampleInterpolationMode value) {
+static const char *ToTOML(const core::config::audio::SampleInterpolationMode value) {
     switch (value) {
     default: [[fallthrough]];
     case core::config::audio::SampleInterpolationMode::NearestNeighbor: return "Nearest";
@@ -445,7 +444,7 @@ FORCE_INLINE static const char *ToTOML(const core::config::audio::SampleInterpol
     }
 }
 
-FORCE_INLINE static const char *ToTOML(const Settings::Input::Mouse::CaptureMode value) {
+static const char *ToTOML(const Settings::Input::Mouse::CaptureMode value) {
     switch (value) {
     default: [[fallthrough]];
     case Settings::Input::Mouse::CaptureMode::SystemCursor: return "SystemCursor";
@@ -453,7 +452,7 @@ FORCE_INLINE static const char *ToTOML(const Settings::Input::Mouse::CaptureMode
     }
 }
 
-FORCE_INLINE static const char *ToTOML(const Settings::GUI::FrameRateOSDPosition value) {
+static const char *ToTOML(const Settings::GUI::FrameRateOSDPosition value) {
     switch (value) {
     case Settings::GUI::FrameRateOSDPosition::TopLeft: return "TopLeft";
     default: [[fallthrough]];
@@ -463,7 +462,7 @@ FORCE_INLINE static const char *ToTOML(const Settings::GUI::FrameRateOSDPosition
     }
 }
 
-FORCE_INLINE static const char *ToTOML(const gfx::Backend value) {
+static const char *ToTOML(const gfx::Backend value) {
     switch (value) {
     default: return "Default";
 #if YMIR_PLATFORM_HAS_DIRECT3D
@@ -480,14 +479,14 @@ FORCE_INLINE static const char *ToTOML(const gfx::Backend value) {
     }
 }
 
-FORCE_INLINE static std::string ToTOML(const std::optional<gfx::AdapterID> &value) {
+static std::string ToTOML(const std::optional<gfx::AdapterID> &value) {
     if (!value) {
         return "";
     }
     return value->ToString();
 }
 
-FORCE_INLINE static const char *ToTOML(const Settings::Video::DisplayRotation value) {
+static const char *ToTOML(const Settings::Video::DisplayRotation value) {
     switch (value) {
     default: [[fallthrough]];
     case Settings::Video::DisplayRotation::Normal: return "Normal";
@@ -497,7 +496,7 @@ FORCE_INLINE static const char *ToTOML(const Settings::Video::DisplayRotation va
     }
 }
 
-FORCE_INLINE static const char *ToTOML(const SDL_PixelFormat value) {
+static const char *ToTOML(const SDL_PixelFormat value) {
     switch (value) {
     default: [[fallthrough]];
     case SDL_PIXELFORMAT_UNKNOWN: return "None";
@@ -568,7 +567,7 @@ FORCE_INLINE static const char *ToTOML(const SDL_PixelFormat value) {
     }
 }
 
-FORCE_INLINE static const char *ToTOML(const Settings::Audio::MidiPort::Type value) {
+static const char *ToTOML(const Settings::Audio::MidiPort::Type value) {
     switch (value) {
     default: [[fallthrough]];
     case Settings::Audio::MidiPort::Type::None: return "None";
@@ -577,7 +576,7 @@ FORCE_INLINE static const char *ToTOML(const Settings::Audio::MidiPort::Type val
     }
 }
 
-FORCE_INLINE static const char *ToTOML(const Settings::Cartridge::Type value) {
+static const char *ToTOML(const Settings::Cartridge::Type value) {
     switch (value) {
     default: [[fallthrough]];
     case Settings::Cartridge::Type::None: return "None";
@@ -587,7 +586,7 @@ FORCE_INLINE static const char *ToTOML(const Settings::Cartridge::Type value) {
     }
 }
 
-FORCE_INLINE static const char *ToTOML(const Settings::Cartridge::BackupRAM::Capacity value) {
+static const char *ToTOML(const Settings::Cartridge::BackupRAM::Capacity value) {
     switch (value) {
     default: [[fallthrough]];
     case Settings::Cartridge::BackupRAM::Capacity::_32Mbit: return "32Mbit";
@@ -597,7 +596,7 @@ FORCE_INLINE static const char *ToTOML(const Settings::Cartridge::BackupRAM::Cap
     }
 }
 
-FORCE_INLINE static const char *ToTOML(const Settings::Cartridge::DRAM::Capacity value) {
+static const char *ToTOML(const Settings::Cartridge::DRAM::Capacity value) {
     switch (value) {
     default: [[fallthrough]];
     case Settings::Cartridge::DRAM::Capacity::_48Mbit: return "48Mbit";
@@ -610,35 +609,35 @@ FORCE_INLINE static const char *ToTOML(const Settings::Cartridge::DRAM::Capacity
 // Parsers
 
 template <typename T>
-FORCE_INLINE static void Parse(toml::node_view<toml::node> &node, T &value) {
+static void Parse(toml::node_view<toml::node> &node, T &value) {
     if (auto opt = node.value<T>()) {
         value = *opt;
     }
 }
 
 template <typename T>
-FORCE_INLINE static void Parse(toml::node_view<toml::node> &node, const char *name, T &value) {
+static void Parse(toml::node_view<toml::node> &node, const char *name, T &value) {
     toml::node_view view{node[name]};
     Parse(view, value);
 }
 
 template <arithmetic_type T>
-FORCE_INLINE static void Parse(toml::node_view<toml::node> &node, const char *name, T &value, T defaultValue,
-                               T minValue, T maxValue) {
+static void Parse(toml::node_view<toml::node> &node, const char *name, T &value, T defaultValue, T minValue,
+                  T maxValue) {
     toml::node_view view{node[name]};
     value = defaultValue;
     Parse(view, value);
     value = std::clamp<T>(value, minValue, maxValue);
 }
 
-FORCE_INLINE static void Parse(toml::node_view<toml::node> &node, const char *name, std::filesystem::path &value) {
+static void Parse(toml::node_view<toml::node> &node, const char *name, std::filesystem::path &value) {
     if (auto opt = node[name].value<std::filesystem::path::string_type>()) {
         value = *opt;
     }
 }
 
 template <typename T, size_t N>
-FORCE_INLINE static void Parse(toml::node_view<toml::node> &node, const char *name, std::array<T, N> &value) {
+static void Parse(toml::node_view<toml::node> &node, const char *name, std::array<T, N> &value) {
     if (toml::array *arr = node[name].as_array()) {
         value.fill({});
         for (size_t i = 0; toml::node &node : *arr) {
@@ -653,7 +652,7 @@ FORCE_INLINE static void Parse(toml::node_view<toml::node> &node, const char *na
 }
 
 template <typename T>
-FORCE_INLINE static void Parse(toml::node_view<toml::node> &node, const char *name, std::vector<T> &value) {
+static void Parse(toml::node_view<toml::node> &node, const char *name, std::vector<T> &value) {
     if (toml::array *arr = node[name].as_array()) {
         value.clear();
         for (toml::node &node : *arr) {
@@ -664,22 +663,22 @@ FORCE_INLINE static void Parse(toml::node_view<toml::node> &node, const char *na
 }
 
 template <typename T>
-FORCE_INLINE static void Parse(toml::node_view<toml::node> &node, const char *name, util::Observable<T> &value) {
+static void Parse(toml::node_view<toml::node> &node, const char *name, util::Observable<T> &value) {
     T wrappedValue = value.Get();
     Parse(node, name, wrappedValue);
     value = wrappedValue;
 }
 
 template <arithmetic_type T>
-FORCE_INLINE static void Parse(toml::node_view<toml::node> &node, const char *name, util::Observable<T> &value,
-                               T defaultValue, T minValue, T maxValue) {
+static void Parse(toml::node_view<toml::node> &node, const char *name, util::Observable<T> &value, T defaultValue,
+                  T minValue, T maxValue) {
     T wrappedValue = value.Get();
     Parse(node, name, wrappedValue, defaultValue, minValue, maxValue);
     value = wrappedValue;
 }
 
 // Reads until the InputElementArray is full or runs out of entries, skipping all invalid and "None" entries.
-FORCE_INLINE static void Parse(toml::node_view<toml::node> &node, const char *name, input::InputBind &value) {
+static void Parse(toml::node_view<toml::node> &node, const char *name, input::InputBind &value) {
     if (toml::array *arr = node[name].as_array()) {
         value.elements.fill({});
         const size_t count = arr->size();
@@ -700,12 +699,12 @@ FORCE_INLINE static void Parse(toml::node_view<toml::node> &node, const char *na
 // Value-to-string converters
 
 template <arithmetic_type T>
-FORCE_INLINE static T ToTOML(T value) {
+static T ToTOML(T value) {
     return value;
 }
 
 // Creates a TOML array with valid entries (skips Nones).
-FORCE_INLINE static toml::array ToTOML(const input::InputBind &value) {
+static toml::array ToTOML(const input::InputBind &value) {
     toml::array out{};
     for (auto &element : value.elements) {
         if (element.type != input::InputElement::Type::None) {
@@ -716,7 +715,7 @@ FORCE_INLINE static toml::array ToTOML(const input::InputBind &value) {
 }
 
 template <typename T, size_t N>
-FORCE_INLINE static toml::array ToTOML(const std::array<T, N> &value) {
+static toml::array ToTOML(const std::array<T, N> &value) {
     toml::array out{};
     for (auto &item : value) {
         out.push_back(ToTOML(item));
@@ -725,7 +724,7 @@ FORCE_INLINE static toml::array ToTOML(const std::array<T, N> &value) {
 }
 
 template <typename T>
-FORCE_INLINE static toml::array ToTOML(const std::vector<T> &value) {
+static toml::array ToTOML(const std::vector<T> &value) {
     toml::array out{};
     for (auto &item : value) {
         out.push_back(ToTOML(item));

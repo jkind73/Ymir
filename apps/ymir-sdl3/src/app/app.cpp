@@ -139,7 +139,6 @@
 CMRC_DECLARE(Ymir_sdl3_rc);
 
 using clk = std::chrono::steady_clock;
-using MidiPortType = app::Settings::Audio::MidiPort::Type;
 
 namespace app {
 
@@ -263,6 +262,8 @@ int App::Run(const CommandLineOptions &options) {
 
     {
         auto &audioSettings = settings.audio;
+
+        using MidiPortType = app::Settings::Audio::MidiPort::Type;
 
         audioSettings.midiInputPort.Observe([&](app::Settings::Audio::MidiPort value) {
             auto input = m_midiService.GetInput();
@@ -2362,8 +2363,10 @@ void App::RunEmulator() {
                 }
                 if (ImGui::BeginMenu("View")) {
                     auto &videoSettings = settings.video;
+                    ImGui::PushItemFlag(ImGuiItemFlags_AutoClosePopups, false);
                     ImGui::MenuItem("Force integer scaling", nullptr, &videoSettings.forceIntegerScaling);
                     ImGui::MenuItem("Force aspect ratio", nullptr, &videoSettings.forceAspectRatio);
+                    ImGui::PopItemFlag();
                     if (ImGui::SmallButton("4:3")) {
                         videoSettings.forcedAspect = 4.0 / 3.0;
                         settings.MakeDirty();
@@ -3352,16 +3355,6 @@ void App::RunEmulator() {
                                .w = (float)scaledWidth,
                                .h = (float)scaledHeight};
             m_graphicsService.DrawTextureRotated(dispTexture, srcRect, dstRect, rotAngle);
-            // SDL_FRect srcRect{.x = 0.0f,
-            //                   .y = 0.0f,
-            //                   .w = (float)(screen.width * screen.fbScale),
-            //                   .h = (float)(screen.height * screen.fbScale)};
-            // SDL_FRect dstRect{.x = floorf(slackX * 0.5f),
-            //                   .y = floorf(slackY * 0.5f + menuBarHeight),
-            //                   .w = (float)scaledWidth,
-            //                   .h = (float)scaledHeight};
-            // SDL_Texture *dispTexturePtr = m_graphicsService.GetSDLTexture(dispTexture);
-            // SDL_RenderTextureRotated(renderer, dispTexturePtr, &srcRect, &dstRect, rotAngle, nullptr, SDL_FLIP_NONE);
 
             screen.scale = scale;
             screen.dCenterX = dstRect.x + dstRect.w * 0.5f;

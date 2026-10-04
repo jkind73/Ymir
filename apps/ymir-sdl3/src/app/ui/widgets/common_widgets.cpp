@@ -22,4 +22,18 @@ void ExplanationTooltip(const char *explanation, bool sameLine) {
     }
 }
 
+void WarningTooltip(const char *explanation, bool sameLine) {
+    const YmirImGuiData *imguiData = GetYmirImGuiData();
+    if (sameLine) {
+        ImGui::SameLine();
+    }
+    ImGui::TextColored(imguiData->colors.notice, ICON_MS_WARNING);
+    if (ImGui::BeginItemTooltip()) {
+        ImGui::PushTextWrapPos(450.0f * imguiData->displayScale);
+        ImGui::TextUnformatted(explanation);
+        ImGui::PopTextWrapPos();
+        ImGui::EndTooltip();
+    }
+}
+
 } // namespace app::ui::widgets

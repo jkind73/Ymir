@@ -41,7 +41,7 @@ concept arithmetic_type = std::integral<T> || std::floating_point<T>;
 // - Moved "Video.Deinterlace" and "Video.TransparentMeshes" to "Video.Enhancements.*"
 // v6:
 // - Changed "Video.ForcedAspect" from a double to a Ratio
-inline constexpr int kConfigVersion = 5;
+inline constexpr int kConfigVersion = 6;
 
 namespace grp {
 

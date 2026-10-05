@@ -409,7 +409,7 @@ jobs:
         run: |
           if [ ${{ matrix.build-set.library-only }} = 'no' ]; then
             cmake -B ${{ steps.strings.outputs.build-output-dir }} \
-              -DVCPKG_TARGET_TRIPLET=${{ matrix.arch.triplet_arch }}-osx11 \
+              -DVCPKG_TARGET_TRIPLET=${{ matrix.arch.triplet_arch }}-osx12 \
               -DCMAKE_BUILD_TYPE=Debug \
               -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake \
               -DCMAKE_OSX_ARCHITECTURES=${{ matrix.arch.isa_name }} \

@@ -75,6 +75,7 @@ jobs:
       - name: Configure CMake
         shell: pwsh
         env:
+          VCPKG_BINARY_SOURCES: 'clear;files,${{ github.workspace }}/vcpkg_cache,readwrite'
           CXX: clang++
           CC: clang
         run: |
@@ -388,6 +389,8 @@ jobs:
           key: macos-${{ matrix.arch.name }}-vcpkg-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'vcpkg-triplets/**') }}
 
       - name: Configure CMake
+        env:
+          VCPKG_BINARY_SOURCES: 'clear;files,${{ github.workspace }}/vcpkg_cache,readwrite'
         run: |
           if [ ${{ matrix.build-set.library-only }} = 'no' ]; then
             cmake -B ${{ steps.strings.outputs.build-output-dir }} \

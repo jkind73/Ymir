@@ -162,6 +162,7 @@ jobs:
 
       - name: Configure CMake
         env:
+          VCPKG_BINARY_SOURCES: 'clear;files,${{ github.workspace }}/vcpkg_cache,readwrite'
           CXX: ${{ matrix.cpp_compiler }}
           CC: ${{ matrix.c_compiler }}
         run: >
@@ -488,6 +489,8 @@ jobs:
           key: macos-${{ matrix.arch.name }}-vcpkg-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'vcpkg-triplets/**') }}
 
       - name: Configure CMake
+        env:
+          VCPKG_BINARY_SOURCES: 'clear;files,${{ github.workspace }}/vcpkg_cache,readwrite'
         run: >
           cmake -B ${{ steps.strings.outputs.build-output-dir }}
             -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}

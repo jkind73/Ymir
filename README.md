@@ -45,7 +45,7 @@ Grab the latest release: [stable](https://github.com/ymir-emu/Ymir/releases/late
 - Optional low level CD block emulation
 - A work-in-progress feature-rich debugger
 
-Ymir runs on Windows 10 or later, macOS 15 (Sequoia) or later, most modern and popular Linux distributions and FreeBSD, and supports x86-64 (Intel, AMD) and ARM CPUs.
+Ymir runs on Windows 10 or later, macOS 12 (Monterey) or later, most modern and popular Linux distributions and FreeBSD, and supports x86-64 (Intel, AMD) and ARM CPUs.
 
 
 ## Usage

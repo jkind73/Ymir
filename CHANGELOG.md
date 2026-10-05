@@ -20,6 +20,7 @@ Introduces save state file version 14.
     - `smpc-other.bin`: Other (invalid) SMPC area codes
     - The old `smpc.bin` will be automatically migrated to these files as you use IPL ROMs for each region.
 - App: Shrink embedded M PLUS U font files by removing unused glyphs, reducing binary size. (#915; @4re)
+- Build: Lower macOS version requirement to 12.0 Monterey. (#954)
 - Debugger: Added RBG0 and RBG1 line color single stack views to the VDP2 debug overlay.
 - Debugger: Added basic VDP2 registers view.
 - Graphics: New graphics backend, adding support for native graphics APIs:

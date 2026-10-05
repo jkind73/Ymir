@@ -413,7 +413,7 @@ jobs:
               -DCMAKE_BUILD_TYPE=Debug \
               -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake \
               -DCMAKE_OSX_ARCHITECTURES=${{ matrix.arch.isa_name }} \
-              -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 \
+              -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0 \
               -DBUILD_SHARED_LIBS=OFF \
               -DYmir_ENABLE_DEVLOG=OFF \
               -DYmir_ENABLE_IMGUI_DEMO=OFF \
@@ -428,7 +428,7 @@ jobs:
             cmake -B ${{ steps.strings.outputs.build-output-dir }} \
               -DCMAKE_BUILD_TYPE=Debug \
               -DCMAKE_OSX_ARCHITECTURES=${{ matrix.arch.isa_name }} \
-              -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 \
+              -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0 \
               -DBUILD_SHARED_LIBS=OFF \
               -DYmir_ENABLE_DEVLOG=OFF \
               -DYmir_ENABLE_IPO=OFF \

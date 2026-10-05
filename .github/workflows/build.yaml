@@ -493,28 +493,28 @@ jobs:
           VCPKG_BINARY_SOURCES: 'clear;files,${{ github.workspace }}/vcpkg_cache,readwrite'
         run: >
           cmake -B ${{ steps.strings.outputs.build-output-dir }}
-            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
-            -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake
-            -DBUILD_SHARED_LIBS=OFF
-            -DCMAKE_OSX_ARCHITECTURES=${{ matrix.arch.isa_name }}
-            -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0
-            -DVCPKG_TARGET_TRIPLET=${{ matrix.arch.triplet_arch }}-osx12
-            -DYmir_AVX2=${{ matrix.arch.enable_avx2_option }}
-            -DYmir_ENABLE_IPO=ON
-            -DYmir_ENABLE_DEVLOG=OFF
-            -DYmir_ENABLE_IMGUI_DEMO=OFF
-            -DYmir_ENABLE_UPDATE_CHECKS=ON
-            -DYmir_ENABLE_SANDBOX=OFF
-            -DYmir_ENABLE_YMDASM=OFF
-            -DYmir_EXTRA_INLINING=ON
-            -DYmir_ENABLE_TESTS=OFF
-            -DYmir_VERSION_PRERELEASE=${{ inputs.prerelease-version }}
-            -DYmir_VERSION_BUILD=${{ inputs.build-version }}
-            -DYmir_BUILD_TIMESTAMP=${{ needs.get-project-version.outputs.build-timestamp }}
-            -DYmir_DEV_BUILD=${{ inputs.dev-build && 'ON' || 'OFF' }}
-            -DYmir_LIBRARY_ONLY=OFF
-            -S ${{ github.workspace }}
-            -G Ninja
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+          -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake
+          -DBUILD_SHARED_LIBS=OFF
+          -DCMAKE_OSX_ARCHITECTURES=${{ matrix.arch.isa_name }}
+          -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0
+          -DVCPKG_TARGET_TRIPLET=${{ matrix.arch.triplet_arch }}-osx12
+          -DYmir_AVX2=${{ matrix.arch.enable_avx2_option }}
+          -DYmir_ENABLE_IPO=ON
+          -DYmir_ENABLE_DEVLOG=OFF
+          -DYmir_ENABLE_IMGUI_DEMO=OFF
+          -DYmir_ENABLE_UPDATE_CHECKS=ON
+          -DYmir_ENABLE_SANDBOX=OFF
+          -DYmir_ENABLE_YMDASM=OFF
+          -DYmir_EXTRA_INLINING=ON
+          -DYmir_ENABLE_TESTS=OFF
+          -DYmir_VERSION_PRERELEASE=${{ inputs.prerelease-version }}
+          -DYmir_VERSION_BUILD=${{ inputs.build-version }}
+          -DYmir_BUILD_TIMESTAMP=${{ needs.get-project-version.outputs.build-timestamp }}
+          -DYmir_DEV_BUILD=${{ inputs.dev-build && 'ON' || 'OFF' }}
+          -DYmir_LIBRARY_ONLY=OFF
+          -S ${{ github.workspace }}
+          -G Ninja
 
       - name: Build
         run: cmake --build ${{ steps.strings.outputs.build-output-dir }} --parallel

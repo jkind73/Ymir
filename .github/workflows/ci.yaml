@@ -13,8 +13,6 @@ permissions:
 env:
   USERNAME: ymir-emu
   VCPKG_EXE: ${{ github.workspace }}/vcpkg/vcpkg
-  FEED_URL: https://nuget.pkg.github.com/ymir-emu/index.json
-  VCPKG_BINARY_SOURCES: "clear;nuget,https://nuget.pkg.github.com/ymir-emu/index.json,readwrite"
   VULKAN_SDK_VERSION: "1.4.357.0"
 
 jobs:
@@ -66,20 +64,13 @@ jobs:
         shell: pwsh
         run: ${{ github.workspace }}/vcpkg/bootstrap-vcpkg.bat
 
-      - name: Add NuGet sources to vcpkg
+      - name: Cache vcpkg
         if: ${{ matrix.build-set.library-only == 'no' }}
-        shell: pwsh
-        run: |
-          .$(${{ env.VCPKG_EXE }} fetch nuget) `
-            sources add `
-            -Source "${{ env.FEED_URL }}" `
-            -StorePasswordInClearText `
-            -Name GitHubPackages `
-            -UserName "${{ env.USERNAME }}" `
-            -Password "${{ secrets.GITHUB_TOKEN }}"
-          .$(${{ env.VCPKG_EXE }} fetch nuget) `
-            setapikey "${{ secrets.GITHUB_TOKEN }}" `
-            -Source "${{ env.FEED_URL }}"
+        id: cache-vcpkg
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: ${{ github.workspace }}/vcpkg_cache
+          key: windows-${{ matrix.arch.name }}-vcpkg-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'vcpkg-triplets/**') }}
 
       - name: Configure CMake
         shell: pwsh
@@ -383,27 +374,18 @@ jobs:
         run: |
           echo "build-output-dir=${{ github.workspace }}/build" >> "$GITHUB_OUTPUT"
 
-      - name: Install tools
-        shell: bash
-        run: brew install mono nuget
-
       - name: Bootstrap vcpkg
         if: ${{ matrix.build-set.library-only == 'no' }}
         shell: bash
         run: ${{ github.workspace }}/vcpkg/bootstrap-vcpkg.sh
 
-      - name: Add NuGet sources to vcpkg
+      - name: Cache vcpkg
         if: ${{ matrix.build-set.library-only == 'no' }}
-        shell: bash
-        run: |
-          nuget sources add \
-            -Source "${{ env.FEED_URL }}" \
-            -StorePasswordInClearText \
-            -Name GitHubPackages \
-            -UserName "${{ env.USERNAME }}" \
-            -Password "${{ secrets.GITHUB_TOKEN }}"
-          nuget setapikey "${{ secrets.GITHUB_TOKEN }}" \
-            -Source "${{ env.FEED_URL }}"
+        id: cache-vcpkg
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: ${{ github.workspace }}/vcpkg_cache
+          key: macos-${{ matrix.arch.name }}-vcpkg-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'vcpkg-triplets/**') }}
 
       - name: Configure CMake
         run: |

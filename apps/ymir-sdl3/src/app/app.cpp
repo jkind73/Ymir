@@ -1995,12 +1995,12 @@ void App::RunEmulator() {
         }
 
         // Update display
-        if (screen.updated || screen.videoSync) {
-            if (screen.videoSync && screen.expectFrame && !m_context.paused) {
-                screen.frameReadyEvent.Wait();
-                screen.frameReadyEvent.Reset();
-                screen.expectFrame = false;
-            }
+        if (screen.videoSync && screen.expectFrame && !m_context.paused) {
+            screen.frameReadyEvent.Wait();
+            screen.frameReadyEvent.Reset();
+            screen.expectFrame = false;
+        }
+        if (screen.updated) {
             {
                 std::unique_lock lock{screen.mtxFramebuffer};
                 screen.updated = false;

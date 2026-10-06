@@ -108,7 +108,7 @@ struct Adapter {
 enum class PresentMode {
     VSync,    ///< Enqueues all frames and synchronizes to vertical retrace.
     Mailbox,  ///< Stores in a mailbox the latest frame to be presented. May or may not synchronize to vertical retrace.
-    Adaptive, ///< Adjusts display refresh rate to match presentation speed (variable refresh rate).
+    Adaptive, ///< Presents frames without synchronization while enabling VRR on supported displays.
     NoSync,   ///< Presents frames without synchronization.
 };
 

@@ -193,7 +193,7 @@ util::VoidResult<> SDLRendererGraphicsContext::ResizeTexture(TextureID id, uint3
     SDL_Texture *newTexture =
         SDL_CreateTexture(m_renderer, ToSDL3Value(spec.format), ToSDL3Value(spec.access), width, height);
     if (newTexture == nullptr) {
-        return util::ErrorMessage{"Invalid texture handle"};
+        return util::ErrorMessage{fmt::format("Could not create resized texture: {}", SDL_GetError())};
     }
 
     // Delete old texture and update parameters
@@ -222,6 +222,7 @@ SDLRendererGraphicsContext::UpdateTexture(TextureID id, const IRect *rect,
         area.y = rect->y;
         area.w = rect->w;
         area.h = rect->h;
+        areaPtr = &area;
     }
     if (instance->spec.access == TextureAccess::Streaming) {
         // Streaming textures can be locked and unlocked
@@ -238,6 +239,7 @@ SDLRendererGraphicsContext::UpdateTexture(TextureID id, const IRect *rect,
             area.y = 0;
             area.w = instance->spec.width;
             area.h = instance->spec.height;
+            areaPtr = &area;
         }
         const int stagingPitch = (((area.w * SDL_BYTESPERPIXEL(ToSDL3Value(instance->spec.format))) + 3) & ~3);
         const size_t stagingBufferSize = (size_t)area.h * stagingPitch;
